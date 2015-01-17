@@ -1,6 +1,7 @@
 (function() {
   var svg;
   var shapes = [];
+  var lastShapes = [];
   var hollow, hollowRadius;
   var xAxis, yAxis;
   var graphSize = 600;
@@ -10,13 +11,21 @@
     points: [],
     markingCircle: null,
     markingPoints: [],
-    state: this.STATE_IDLE,
+    STATE_IDLE: 1,
+    STATE_START: 2,
+    STATE_CIRCLE: 3,
+    STATE_POLYGON: 4,
+    STATE_CANCELLED: 5,
+    state: 1,
     onMouseDown: function(x, y) {
       if (this.state === this.STATE_CANCELLED) {
         return;
       }
-      this.state = this.STATE_POLYGON;
+      if (this.state === this.STATE_IDLE) {
+        this.state = this.STATE_START;
+      }
       this.points.push(new SAT.Vector(x, y));
+      this.markingPoints.push(drawPoint(x, y));
     },
     onMouseUp: function(x, y) {
       if (this.state === this.STATE_CANCELLED) {
@@ -27,9 +36,11 @@
       if (this.state === this.STATE_CIRCLE) {
         this.state = this.STATE_IDLE;
         this.markingCircle = null;
-        this.points.length = 0;
+        this.points = [];
+        this._clearMarkingPoints();
+      } else if (this.state === this.STATE_START) {
+        this.state = this.STATE_POLYGON;
       }
-      this.state = this.STATE_IDLE;
     },
     onContextMenu: function(x, y) {
       if (this.points.length > 1) {
@@ -38,20 +49,14 @@
         this.points.forEach(function(point) {
           points.push([point.x, point.y]);
         });
-        drawPolygon(points);
-        this.points.length = 0;
+        drawChainShape(points);
+        this.points = [];
+        this._clearMarkingPoints();
       }
     },
     onMouseMove: function(x, y) {
-      if (this.state === this.STATE_POLYGON) {
+      if (this.state === this.STATE_START || this.state === this.STATE_CIRCLE) {
         this.state = this.STATE_CIRCLE;
-        if (!this.markingCircle) {
-          this.markingCircle = drawCircle(this.points[0].x, this.points[0].y,
-            this.points[0].clone().sub(new SAT.Vector(x, y)).len());
-        } else {
-          updateRadius(this.markingCircle, (this.points[0].clone().sub(new SAT.Vector(x, y)).len()));
-        }
-      } else if (this.state === this.STATE_CIRCLE) {
         if (!this.markingCircle) {
           this.markingCircle = drawCircle(this.points[0].x, this.points[0].y,
             this.points[0].clone().sub(new SAT.Vector(x, y)).len());
@@ -62,20 +67,33 @@
     },
     cancelDraw: function() {
       this.state = this.STATE_CANCELLED;
-      this.points.length = 0;
+      this.points = [];
+      this._clearMarkingPoints();
+    },
+    _clearMarkingPoints: function() {
+      this.markingPoints.forEach(function(point) {
+        point.remove();
+      });
+      this.markingPoints.length = 0;
     }
   };
-  UIManager.STATE_IDLE = 1;
-  UIManager.STATE_CIRCLE = 2;
-  UIManager.STATE_POLYGON = 3;
-  UIManager.STATE_CANCELLED = 4;
   function ShapeWrapper(shape, type) {
     this.shape = shape;
     this.type = type;
     this.id = ShapeWrapper.ID++;
+    this.nature = ShapeWrapper.NATURE_STATIC;
   }
   ShapeWrapper.TYPE_CIRCLE = 1;
   ShapeWrapper.TYPE_POLYGON = 2;
+  ShapeWrapper.NATURE_STATIC = 0;
+  ShapeWrapper.NATURE_DYNAMIC = 1;
+  ShapeWrapper.NATURE_PROTAGONIST = 2;
+  ShapeWrapper.NATURE_GOAL = 3;
+  ShapeWrapper.colorMap = {};
+  ShapeWrapper.colorMap[ShapeWrapper.NATURE_STATIC] = "white";
+  ShapeWrapper.colorMap[ShapeWrapper.NATURE_DYNAMIC] = "black";
+  ShapeWrapper.colorMap[ShapeWrapper.NATURE_PROTAGONIST] = "green";
+  ShapeWrapper.colorMap[ShapeWrapper.NATURE_GOAL] = "red";
   ShapeWrapper.ID = 0;
   function transformCoordinates(event, svg) {
     return new SAT.Vector((event.pageX - svg.offsetLeft - graphSize / 2),
@@ -129,12 +147,19 @@
     shape.mousedown(function() {
       UIManager.cancelDraw();
     });
+    /*shape.mouseup(function() {
+      UIManager.cancelDraw();
+    });*/
     shapes.push(wrapped);
     return wrapped;
   }
+  function drawPoint(x, y) {
+    var r = 1;
+    return strokeAndFill(svg.circle(2 * r).move(mapX(x - r), mapY(y + r)));
+  }
   function drawHollow(r) {
-    redrawAxes();
     hollow = strokeAndFill(svg.circle(2 * r).move(graphSize / 2 - r, graphSize / 2 - r));
+    redrawAxes();
     hollowRadius = r;
   }
   function setHollowRadius(r) {
@@ -155,12 +180,21 @@
     var shape = storeShape(circle, ShapeWrapper.TYPE_CIRCLE);
     shapeToSAT[shape.id] = new SAT.Circle(new SAT.Vector(mapX(x), mapY(y)), r);
     shape.r = r;
+    shape.shape.dblclick(function() {
+      shape.nature = (shape.nature + 1) % 4;
+      shape.shape.attr({fill: ShapeWrapper.colorMap[shape.nature]});
+    });
     makeDraggable(shape);
     redrawAxes();
+    lastShapes.length = 0;
+    lastShapes.push(shape);
     return shape;
   }
   function drawRectangle(x, y, w, h) {
-    return drawPolygon([[x, y], [x + w, y], [x + w, y + h], [x, y + h]]);
+    var shape = drawPolygon([[x, y], [x + w, y], [x + w, y + h], [x, y + h]]);
+    lastShapes.length = 0;
+    lastShapes.push(shape);
+    return shape;
   }
   function drawPolygon(points) {
     if (points.length === 0) {
@@ -195,6 +229,17 @@
     redrawAxes();
     return shape;
   }
+  function drawChainShape(points) {
+    if (points.length === 0) {
+      return;
+    }
+    lastShapes.length = 0;
+    var pointA = points[0];
+    for (var i = 1; i < points.length; i++) {
+      lastShapes.push(drawPolygon([pointA.slice(), points[i].slice()]));
+      pointA = points[i];
+    }
+  }
   function checkOverlaps(shape, x, y) {
     function checkOverlap(aShape) {
       var res = checkOverlaps.lambdas[shape.type][aShape.type](shapeToSAT[shape.id],
@@ -227,12 +272,48 @@
   checkOverlaps.lambdas[ShapeWrapper.TYPE_CIRCLE][ShapeWrapper.TYPE_POLYGON] = SAT.testCirclePolygon;
   checkOverlaps.lambdas[ShapeWrapper.TYPE_POLYGON][ShapeWrapper.TYPE_CIRCLE] = SAT.testPolygonCircle;
   checkOverlaps.lambdas[ShapeWrapper.TYPE_POLYGON][ShapeWrapper.TYPE_POLYGON] = SAT.testPolygonPolygon;
+
+  function removeShape(shape) {
+    shape.shape.remove();
+    delete shapeToSAT[shape.id];
+    for (var i = shapes.length - 1; i >= 0; i--) {
+      if (shapes[i].id === shape.id) {
+        shapes.splice(i, 1);
+        break;
+      }
+    }
+  }
+  function undo() {
+    lastShapes.forEach(function(shape) {
+      removeShape(shape);
+    });
+    lastShapes.length = 0;
+  }
+  function exportScene() {
+    function exportScale(n) {
+      return n / 10;
+    }
+    var scene = [];
+    if (hollow) {
+      scene.push({
+        type: "hollow",
+        radius: exportScale(hollowRadius),
+        nature: "static",
+        x: 0,
+        y: 0
+      });
+    }
+    this.shapes.forEach(function(shape) {
+
+    });
+    return scene;
+  }
   function onLoad() {
     createSVG();
     drawHollow(200);
-    drawCircle(-50, 100, 30);
-    drawCircle(136, 92, 30);
-    drawPolygon([[10, 50], [200, 500], [300, 500], [40, -10]].reverse());
+    //drawCircle(-50, 100, 30);
+    //drawCircle(136, 92, 30);
+    // drawPolygon([[10, 50], [200, 500], [300, 500], [40, -10]].reverse());
     document.querySelector("#hollowRadiusBtn").addEventListener("click", function() {
       setHollowRadius(document.querySelector("#hollowRadius").value);
     });
@@ -253,6 +334,11 @@
     document.querySelector("svg").addEventListener("mousemove", function(event) {
       var vector = transformCoordinates(event, this);
       UIManager.onMouseMove(vector.x, vector.y);
+    });
+    document.body.addEventListener("keyup", function(event) {
+      if (event.keyCode === 90) {
+        undo();
+      }
     });
   }
   window.addEventListener("load", onLoad);
