@@ -4,9 +4,10 @@
   var lastShapes = [];
   var hollow, hollowRadius;
   var xAxis, yAxis;
-  var graphSize = 600;
+  var graphSize = 2000;
   var coordinateBar = document.querySelector("#coordinates");
   var shapeToSAT = {};
+  var exportChainShapes = [];
   var UIManager = {
     points: [],
     markingCircle: null,
@@ -95,15 +96,18 @@
   ShapeWrapper.colorMap[ShapeWrapper.NATURE_PROTAGONIST] = "green";
   ShapeWrapper.colorMap[ShapeWrapper.NATURE_GOAL] = "red";
   ShapeWrapper.ID = 0;
-  function transformCoordinates(event, svg) {
-    return new SAT.Vector((event.pageX - svg.offsetLeft - graphSize / 2),
-      (graphSize / 2 - (event.pageY - svg.offsetTop)));
+  function transformCoordinates(event) {
+    var div = document.querySelector("#canvasDiv");
+    var svg = document.querySelector("svg");
+    return new SAT.Vector((event.pageX - svg.offsetLeft + div.scrollLeft - graphSize / 2),
+      (graphSize / 2 - (event.pageY - svg.offsetTop + div.scrollTop)));
   }
   function createSVG() {
     svg = SVG('canvasDiv').size(graphSize, graphSize);
     document.querySelector("svg").addEventListener("mousemove", function(event) {
-      coordinateBar.innerHTML = (event.pageX - this.offsetLeft - graphSize / 2) +
-        ", " + (graphSize / 2 - (event.pageY - this.offsetTop));
+      var coords = transformCoordinates(event);
+      coordinateBar.innerHTML = coords.x +
+        ", " + coords.y;
     });
     drawAxes();
   }
@@ -129,7 +133,7 @@
     return x - graphSize / 2;
   }
   function deMapY(y) {
-    return y - graphSize / 2;
+    return graphSize / 2 - y;
   }
   function strokeAndFill(obj) {
     return obj.stroke({ color: "blue", width: 2 }).attr({fill: "white"});
@@ -140,6 +144,7 @@
     });
     wrapped.shape.dragmove = function(delta, event) {
       redrawAxes();
+      updateCode();
     }
   }
   function storeShape(shape, type) {
@@ -161,6 +166,7 @@
     hollow = strokeAndFill(svg.circle(2 * r).move(graphSize / 2 - r, graphSize / 2 - r));
     redrawAxes();
     hollowRadius = r;
+    updateCode();
   }
   function setHollowRadius(r) {
     if (!hollow) {
@@ -168,12 +174,14 @@
     }
     hollowRadius = r;
     hollow.radius(r);
+    updateCode();
   }
   function updateRadius(circle, r) {
     circle.shape.radius(r);
     circle.r = r;
     shapeToSAT[circle.id].r = r;
     redrawAxes();
+    updateCode();
   }
   function drawCircle(x, y, r) {
     var circle = strokeAndFill(svg.circle(2 * r).move(mapX(x - r), mapY(y + r)));
@@ -183,17 +191,18 @@
     shape.shape.dblclick(function() {
       shape.nature = (shape.nature + 1) % 4;
       shape.shape.attr({fill: ShapeWrapper.colorMap[shape.nature]});
+      updateCode();
     });
     makeDraggable(shape);
     redrawAxes();
-    lastShapes.length = 0;
-    lastShapes.push(shape);
+    lastShapes.push([shape]);
+    updateCode();
     return shape;
   }
   function drawRectangle(x, y, w, h) {
     var shape = drawPolygon([[x, y], [x + w, y], [x + w, y + h], [x, y + h]]);
-    lastShapes.length = 0;
-    lastShapes.push(shape);
+    lastShapes.push([shape]);
+    updateCode();
     return shape;
   }
   function drawPolygon(points) {
@@ -233,12 +242,16 @@
     if (points.length === 0) {
       return;
     }
-    lastShapes.length = 0;
+    var lastShapesEntry = [];
     var pointA = points[0];
     for (var i = 1; i < points.length; i++) {
-      lastShapes.push(drawPolygon([pointA.slice(), points[i].slice()]));
+      lastShapesEntry.push(drawPolygon([pointA.slice(), points[i].slice()]));
       pointA = points[i];
     }
+    lastShapesEntry.isLine = true;
+    lastShapes.push(lastShapesEntry);
+    exportChainShapes.push(points.slice());
+    updateCode();
   }
   function checkOverlaps(shape, x, y) {
     function checkOverlap(aShape) {
@@ -252,6 +265,7 @@
       hollowRadius - shape.r) {
       return false;
     }
+    var oldPos = shapeToSAT[shape.id].pos.clone();
     shapeToSAT[shape.id].pos.x = x + shape.r;
     shapeToSAT[shape.id].pos.y = y + shape.r;
     var result = false;
@@ -263,6 +277,10 @@
         result = true;
       }
     });
+    if (result) {
+      shapeToSAT[shape.id].pos.x = oldPos.x;
+      shapeToSAT[shape.id].pos.y = oldPos.y;
+    }
     return !result;
   }
   checkOverlaps.lambdas = {};
@@ -284,14 +302,21 @@
     }
   }
   function undo() {
-    lastShapes.forEach(function(shape) {
+    if (lastShapes.length === 0) {
+      return;
+    }
+    if (lastShapes[lastShapes.length - 1].isLine) {
+      exportChainShapes.pop();
+    }
+    lastShapes[lastShapes.length - 1].forEach(function(shape) {
       removeShape(shape);
     });
-    lastShapes.length = 0;
+    lastShapes.pop();
+    updateCode();
   }
   function exportScene() {
     function exportScale(n) {
-      return n / 10;
+      return n / 30;
     }
     var scene = [];
     if (hollow) {
@@ -303,13 +328,146 @@
         y: 0
       });
     }
-    this.shapes.forEach(function(shape) {
-
+    shapes.forEach(function(shape) {
+      if (shape.type === ShapeWrapper.TYPE_CIRCLE) {
+        var SATShape = shapeToSAT[shape.id];
+        var obj = {
+          radius: exportScale(SATShape.r),
+          x: exportScale(deMapX(SATShape.pos.x)),
+          y: exportScale(deMapY(SATShape.pos.y))
+        };
+        switch(shape.nature) {
+        case ShapeWrapper.NATURE_STATIC:
+          obj.nature = "static",
+          obj.type = "circle"
+          break;
+        case ShapeWrapper.NATURE_DYNAMIC:
+          obj.nature = "dynamic",
+          obj.type = "circle"
+          break;
+        case ShapeWrapper.NATURE_PROTAGONIST:
+          obj.nature = "dynamic",
+          obj.type = "protagonist"
+          break;
+        case ShapeWrapper.NATURE_GOAL:
+          obj.nature = "static",
+          obj.type = "goal"
+          break;
+        default:
+          throw new Error("Invalid shape.nature");
+        }
+        scene.push(obj);
+      }
+    });
+    exportChainShapes.forEach(function(chainShape) {
+      scene.push({
+        type: "chain",
+        nature: "static",
+        points: chainShape.map(function(point) {
+          return [exportScale(point[0]), exportScale(point[1])]
+        })
+      });
     });
     return scene;
   }
+  var typeToColor = {
+    circle: "0.93f, 0.47f, 0.15f, 1.0f",
+    goal: "0.16f, 0.53f, 0.78f, 1.0f",
+    protagonist: "0.16f, 0.50f, 0.19f, 1.0f",
+    hollow: "0.13f ,0.62f, 0.20f, 1.0f",
+    chain: "0.13f ,0.62f, 0.20f, 1.0f"
+  };
+  function gen_goal_code(obj) {
+    var code = "world.goal = new GameCircle(world.getWorld(), ";
+    code += (obj.nature === "dynamic" ? "BodyDef.BodyType.DynamicBody" : "BodyDef.BodyType.StaticBody");
+    ["radius", "x", "y"].forEach(function(prop) {
+      code += ", " + obj[prop] + "f";
+    });
+    code += ", ";
+    code += "new Color(" + typeToColor.goal + ")";
+    code += ");\n";
+    code += "world.goal.body.setUserData(\"goal\");\n";
+    code += "world.bodies.add(world.goal);\n";
+    return code;
+  }
+  function gen_protagonist_code(obj) {
+    var code = "world.protagonist = new GameCircle(world.getWorld(), ";
+    code += (obj.nature === "dynamic" ? "BodyDef.BodyType.DynamicBody" : "BodyDef.BodyType.StaticBody");
+    ["radius", "x", "y"].forEach(function(prop) {
+      code += ", " + obj[prop] + "f";
+    });
+    code += ", ";
+    code += "new Color(" + typeToColor.protagonist + ")";
+    code += ");\n";
+    code += "world.protagonist.body.setUserData(\"false\");\n";
+    code += "world.bodies.add(world.protagonist);\n";
+    return code;
+  }
+  function gen_circle_code(obj) {
+    var code = "world.bodies.add(new GameCircle(world.getWorld(), ";
+    code += (obj.nature === "dynamic" ? "BodyDef.BodyType.DynamicBody" : "BodyDef.BodyType.StaticBody");
+    ["radius", "x", "y"].forEach(function(prop) {
+      code += ", " + obj[prop] + "f";
+    });
+    code += ", ";
+    code += "new Color(" + typeToColor.circle + ")";
+    code += "));\n";
+    return code;
+  }
+  function gen_hollow_code(obj) {
+    var code = "world.hollow = new GameHollow(world.getWorld()";
+    ["radius", "x", "y"].forEach(function(prop) {
+      code += ", " + obj[prop] + "f";
+    });
+    code += ", ";
+    code += "new Color(" + typeToColor.hollow + ")";
+    code += ");\n";
+    code += "world.bodies.add(world.hollow);\n";
+    return code;
+  }
+  function gen_chain_code(obj) {
+    var code = "world.bodies.add(new GameChain(world.getWorld(), new Vector2[]{";
+    for (var i = 0; i < obj.points.length - 1; i++) {
+      code += "new Vector2(" + obj.points[i][0] + "f, " + obj.points[i][1] + "f), "
+    }
+    code += "new Vector2(" + obj.points[i][0] + "f, " + obj.points[i][1] + "f)";
+    code += "}, new Color(" + typeToColor.chain + ")";
+    code += "));\n";
+    return code;
+  }
+  function gen_code(scene) {
+    var code = "";
+    for (var i = 0; i < scene.length; i++) {
+      var obj = scene[i];
+      switch(obj.type) {
+        case "circle":
+          code += gen_circle_code(obj);
+          break;
+        case "hollow":
+          code += gen_hollow_code(obj);
+          break;
+        case "goal":
+          code += gen_goal_code(obj);
+          break;
+        case "protagonist":
+          code += gen_protagonist_code(obj);
+          break;
+        case "chain":
+          code += gen_chain_code(obj);
+          break;
+      }
+    }
+    return code;
+  }
+  function updateCode() {
+    var jsonObj = exportScene();
+    document.querySelector("#json").innerHTML = JSON.stringify(jsonObj);
+    document.querySelector("#java").innerHTML = gen_code(jsonObj);
+  };
   function onLoad() {
     createSVG();
+    document.querySelector("#canvasDiv").scrollTop = 1.3 * graphSize / 4;
+    document.querySelector("#canvasDiv").scrollLeft = 1.3 * graphSize / 4;
     drawHollow(200);
     //drawCircle(-50, 100, 30);
     //drawCircle(136, 92, 30);

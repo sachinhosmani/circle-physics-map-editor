@@ -10,7 +10,7 @@
       var start, drag, end
         , element = this
         , parent  = this.parent._parent(SVG.Nested) || this._parent(SVG.Doc)
-
+      
       /* remove draggable if already present */
       if (typeof this.fixed === 'function')
         this.fixed()
@@ -145,7 +145,6 @@
         if (element.dragend)
           element.dragend(delta, event)
       }
-      this.end = end;
 
       /* bind mousedown event */
       element.on('mousedown', start)
@@ -159,7 +158,6 @@
 
         start = drag = end = null
 
-        this.end = null;
         return element
       }
 

@@ -3,14 +3,17 @@
     <title>Scene Generator</title>
   </head>
   <body>
-    <div id="canvasDiv" style="display:inline-block;"></div>
+    <div id="canvasDiv" style="width: 700px; height: 700px; overflow: scroll; display:inline-block;"></div>
     <div style="display:inline-block;">
-      <label>Hollow Radius: </label>
-      <input type="text" id="hollowRadius"/>
-      <button id="hollowRadiusBtn">Set</button>
-      <div id="coordinates">
+      <p><textarea readonly id="json" style="width: 600px; height: 280px; overflow: scroll;"></textarea></p>
+      <p><textarea readonly id="java" style="width: 600px; height: 280px; overflow: scroll;"></textarea></p>
+      <div>Coordinates:
+        <span id="coordinates"></span>
       </div>
     </div>
+    <label>Hollow Radius: </label>
+    <input type="text" id="hollowRadius" value="200"/>
+    <button id="hollowRadiusBtn">Set</button>
     <script src="svg.min.js"></script>
     <script src="svg.draggable.js"></script>
     <script src="SAT.min.js"></script>
