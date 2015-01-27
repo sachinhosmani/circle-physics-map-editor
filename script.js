@@ -8,10 +8,16 @@
   var coordinateBar = document.querySelector("#coordinates");
   var shapeToSAT = {};
   var exportChainShapes = [];
+  var constrained = true;
+  var editMode = false;
   var UIManager = {
     points: [],
     markingCircle: null,
     markingPoints: [],
+    markingLines: [],
+    markingBoxes: [],
+    displacedX: null,
+    displacedY: null,
     STATE_IDLE: 1,
     STATE_START: 2,
     STATE_CIRCLE: 3,
@@ -19,6 +25,7 @@
     STATE_CANCELLED: 5,
     state: 1,
     onMouseDown: function(x, y) {
+      if (editMode) return;
       if (this.state === this.STATE_CANCELLED) {
         return;
       }
@@ -44,6 +51,7 @@
       }
     },
     onContextMenu: function(x, y) {
+      if (editMode) return;
       if (this.points.length > 1) {
         this.state = this.STATE_IDLE;
         var points = [];
@@ -56,13 +64,17 @@
       }
     },
     onMouseMove: function(x, y) {
+      this._clearMarkingLines();
+      this._clearMarkingBoxes();
+      this._updateMarkingLines(x, y);
       if (this.state === this.STATE_START || this.state === this.STATE_CIRCLE) {
         this.state = this.STATE_CIRCLE;
+        var r = this.points[0].clone().sub(new SAT.Vector(x, y)).len();
+        this._updateMarkingBoxes(r);
         if (!this.markingCircle) {
-          this.markingCircle = drawCircle(this.points[0].x, this.points[0].y,
-            this.points[0].clone().sub(new SAT.Vector(x, y)).len());
+          this.markingCircle = drawCircle(this.points[0].x, this.points[0].y, r);
         } else {
-          updateRadius(this.markingCircle, (this.points[0].clone().sub(new SAT.Vector(x, y)).len()));
+          updateRadius(this.markingCircle, r);
         }
       }
     },
@@ -70,12 +82,95 @@
       this.state = this.STATE_CANCELLED;
       this.points = [];
       this._clearMarkingPoints();
+      this.markingCircle = null;
     },
     _clearMarkingPoints: function() {
       this.markingPoints.forEach(function(point) {
-        point.remove();
+        point.shape.remove();
       });
       this.markingPoints.length = 0;
+    },
+    _clearMarkingLines: function() {
+      this.markingLines.forEach(function(line) {
+        line.shape.remove();
+      });
+      this.markingLines.length = 0;
+    },
+    _clearMarkingBoxes: function() {
+      this.markingBoxes.forEach(function(line) {
+        line.shape.remove();
+      });
+      this.markingBoxes.length = 0;
+    },
+    _updateMarkingLines: function(x, y) {
+      var _x = x, _y = y;
+      x = mapX(x);
+      y = mapY(y);
+      var that = this;
+      shapes.forEach(function(shape) {
+        if (shape.type === ShapeWrapper.TYPE_CIRCLE && (!that.markingCircle ||
+          shape.id !== that.markingCircle.id)) {
+          var SATShape = shapeToSAT[shape.id];
+          if (Math.floor(SATShape.pos.y) === y) {
+            var line = drawPolygon([[-graphSize / 2, _y], [graphSize / 2, _y]], true);
+            line.shape.stroke({ color: "grey", width: 1 });
+            that.markingLines.push(line);
+          }
+          if (Math.floor(SATShape.pos.x) === x) {
+            var line = drawPolygon([[_x, -graphSize / 2], [_x, graphSize / 2]], true);
+            line.shape.stroke({ color: "grey", width: 1 });
+            that.markingLines.push(line);
+          }
+        }
+      });
+      exportChainShapes.forEach(function(shape) {
+        for (var i = shape.length - 1; i >= 0; i--) {
+          if (shape[i][1] === _y) {
+            var line = drawPolygon([[-graphSize / 2, _y], [graphSize / 2, _y]], true);
+            line.shape.stroke({ color: "grey", width: 1 });
+            that.markingLines.push(line);
+          }
+          if (shape[i][0] === _x) {
+            var line = drawPolygon([[_x, -graphSize / 2], [_x, graphSize / 2]], true);
+            line.shape.stroke({ color: "grey", width: 1 });
+            that.markingLines.push(line);
+          }
+        }
+      });
+      this.markingPoints.forEach(function(shape) {
+        if (shape.y === _y) {
+          var line = drawPolygon([[-graphSize / 2, _y], [graphSize / 2, _y]], true);
+          line.shape.stroke({ color: "grey", width: 1 });
+          that.markingLines.push(line);
+        }
+        if (shape.x === _x) {
+          var line = drawPolygon([[_x, -graphSize / 2], [_x, graphSize / 2]], true);
+          line.shape.stroke({ color: "grey", width: 1 });
+          that.markingLines.push(line);
+        }
+      });
+    },
+    _updateMarkingBoxes: function(r) {
+      var that = this;
+      shapes.forEach(function(shape) {
+        if (shape.type === ShapeWrapper.TYPE_CIRCLE && (!that.markingCircle ||
+          shape.id !== that.markingCircle.id)) {
+          var SATShape = shapeToSAT[shape.id];
+          if (Math.abs(SATShape.r - r) <= 2) {
+            that.markingCircle && updateRadius(that.markingCircle, r);
+            var x = deMapX(SATShape.pos.x);
+            var y = deMapY(SATShape.pos.y);
+            var polygon = drawPolygon([
+                [x - r, y - r],
+                [x - r, y + r],
+                [x + r, y + r],
+                [x + r, y - r]
+            ], true);
+            polygon.shape.stroke({ color: "grey", width: 1 });
+            that.markingBoxes.push(polygon);
+          }
+        }
+      });
     }
   };
   function ShapeWrapper(shape, type) {
@@ -101,6 +196,12 @@
     var svg = document.querySelector("svg");
     return new SAT.Vector((event.pageX - svg.offsetLeft + div.scrollLeft - graphSize / 2),
       (graphSize / 2 - (event.pageY - svg.offsetTop + div.scrollTop)));
+  }
+  function transformCoordinates2(x, y) {
+    var div = document.querySelector("#canvasDiv");
+    var svg = document.querySelector("svg");
+    return new SAT.Vector((x - svg.offsetLeft + div.scrollLeft - graphSize / 2),
+      (graphSize / 2 - (y - svg.offsetTop + div.scrollTop)));
   }
   function createSVG() {
     svg = SVG('canvasDiv').size(graphSize, graphSize);
@@ -140,27 +241,35 @@
   }
   function makeDraggable(wrapped) {
     wrapped.shape.draggable(function(x, y) {
-      return checkOverlaps(wrapped, x, y);
+      return !editMode && checkOverlaps(wrapped, x, y);
     });
     wrapped.shape.dragmove = function(delta, event) {
       redrawAxes();
       updateCode();
+      //UIManager.cancelDraw();
     }
   }
-  function storeShape(shape, type) {
-    var wrapped = new ShapeWrapper(shape, type);
-    shape.mousedown(function() {
-      UIManager.cancelDraw();
+  function storeShape(shape) {
+    shape.shape.mousedown(function() {
+      if (!editMode) UIManager.cancelDraw();
+      if (shape.type === ShapeWrapper.TYPE_CIRCLE && editMode === true) {
+        UIManager.state = UIManager.STATE_CIRCLE;
+        UIManager.markingCircle = shape;
+        UIManager.points = [new SAT.Vector(deMapX(shapeToSAT[shape.id].pos.x), deMapY(shapeToSAT[shape.id].pos.y))];
+      }
     });
-    /*shape.mouseup(function() {
+    /*shape.shape.mouseup(function() {
       UIManager.cancelDraw();
     });*/
-    shapes.push(wrapped);
-    return wrapped;
+    shapes.push(shape);
+    return shape;
   }
   function drawPoint(x, y) {
     var r = 1;
-    return strokeAndFill(svg.circle(2 * r).move(mapX(x - r), mapY(y + r)));
+    var shape = new ShapeWrapper(strokeAndFill(svg.circle(2 * r).move(mapX(x - r), mapY(y + r))), ShapeWrapper.TYPE_CIRCLE);
+    shape.x = x;
+    shape.y = y;
+    return shape;
   }
   function drawHollow(r) {
     hollow = strokeAndFill(svg.circle(2 * r).move(graphSize / 2 - r, graphSize / 2 - r));
@@ -183,29 +292,46 @@
     redrawAxes();
     updateCode();
   }
-  function drawCircle(x, y, r) {
+  function drawCircle(x, y, r, dummy) {
     var circle = strokeAndFill(svg.circle(2 * r).move(mapX(x - r), mapY(y + r)));
-    var shape = storeShape(circle, ShapeWrapper.TYPE_CIRCLE);
+    redrawAxes();
+    var shape = new ShapeWrapper(circle, ShapeWrapper.TYPE_CIRCLE);
+    circle.mousedown(function() {
+    });
+    if (dummy) {
+      return shape;
+    }
+    storeShape(shape);
     shapeToSAT[shape.id] = new SAT.Circle(new SAT.Vector(mapX(x), mapY(y)), r);
     shape.r = r;
     shape.shape.dblclick(function() {
+      if (editMode === true) {
+        removeShape(shape);
+        lastShapes[shape.lastShapeIndex] = null;
+        updateCode();
+        UIManager.cancelDraw();
+        return;
+      }
       shape.nature = (shape.nature + 1) % 4;
       shape.shape.attr({fill: ShapeWrapper.colorMap[shape.nature]});
       updateCode();
     });
     makeDraggable(shape);
-    redrawAxes();
+    lastShapes.push([shape]);
+    shape.lastShapeIndex = lastShapes.length - 1;
+    updateCode();
+    return shape;
+  }
+  function drawRectangle(x, y, w, h, dummy) {
+    var shape = drawPolygon([[x, y], [x + w, y], [x + w, y + h], [x, y + h]], dummy);
+    if (dummy) {
+      return shape;
+    }
     lastShapes.push([shape]);
     updateCode();
     return shape;
   }
-  function drawRectangle(x, y, w, h) {
-    var shape = drawPolygon([[x, y], [x + w, y], [x + w, y + h], [x, y + h]]);
-    lastShapes.push([shape]);
-    updateCode();
-    return shape;
-  }
-  function drawPolygon(points) {
+  function drawPolygon(points, dummy) {
     if (points.length === 0) {
       return;
     }
@@ -215,7 +341,12 @@
     }
     pointsString += mapX(points[i][0]) + "," + mapY(points[i][1]);
     var polygon = strokeAndFill(svg.polygon(pointsString));
-    var shape = storeShape(polygon, ShapeWrapper.TYPE_POLYGON);
+    var shape = new ShapeWrapper(polygon, ShapeWrapper.TYPE_POLYGON);
+    redrawAxes();
+    if (dummy) {
+      return shape;
+    }
+    storeShape(shape);
     var tmpConstructor = function() {};
     tmpConstructor.prototype = SAT.Polygon.prototype;
     var cx = 0, cy = 0;
@@ -235,18 +366,21 @@
     var tmpShape = new tmpConstructor();
     SAT.Polygon.apply(tmpShape, SATPoints);
     shapeToSAT[shape.id] = tmpShape;
-    redrawAxes();
     return shape;
   }
-  function drawChainShape(points) {
+  function drawChainShape(points, dummy) {
     if (points.length === 0) {
       return;
     }
     var lastShapesEntry = [];
     var pointA = points[0];
     for (var i = 1; i < points.length; i++) {
-      lastShapesEntry.push(drawPolygon([pointA.slice(), points[i].slice()]));
+      var polygon = drawPolygon([pointA.slice(), points[i].slice()], dummy);
+      !dummy && lastShapesEntry.push(polygon);
       pointA = points[i];
+    }
+    if (dummy) {
+      return;
     }
     lastShapesEntry.isLine = true;
     lastShapes.push(lastShapesEntry);
@@ -261,7 +395,7 @@
     }
     var distance = new SAT.Vector(graphSize / 2, graphSize / 2);
     distance.sub(new SAT.Vector(x + shape.r, y + shape.r));
-    if (distance.len() >
+    if (constrained && distance.len() >
       hollowRadius - shape.r) {
       return false;
     }
@@ -269,6 +403,7 @@
     shapeToSAT[shape.id].pos.x = x + shape.r;
     shapeToSAT[shape.id].pos.y = y + shape.r;
     var result = false;
+    var onPolygonPoint = false;
     shapes.forEach(function (aShape) {
       if (aShape.id === shape.id) {
         return;
@@ -277,6 +412,9 @@
         result = true;
       }
     });
+    if (!constrained) {
+      result = false;
+    }
     if (result) {
       shapeToSAT[shape.id].pos.x = oldPos.x;
       shapeToSAT[shape.id].pos.y = oldPos.y;
@@ -304,6 +442,9 @@
   function undo() {
     if (lastShapes.length === 0) {
       return;
+    }
+    if (!lastShapes[lastShapes.length - 1]) {
+      lastShapes.pop();
     }
     if (lastShapes[lastShapes.length - 1].isLine) {
       exportChainShapes.pop();
@@ -371,10 +512,10 @@
     return scene;
   }
   var typeToColor = {
-    circle: "0.93f, 0.47f, 0.15f, 1.0f",
+    circle: "0.13f ,0.62f, 0.20f, 1.0f",
     goal: "0.16f, 0.53f, 0.78f, 1.0f",
     protagonist: "0.16f, 0.50f, 0.19f, 1.0f",
-    hollow: "0.13f ,0.62f, 0.20f, 1.0f",
+    hollow: "0.44f, 0.87f, 0.52f, 1.0f",
     chain: "0.13f ,0.62f, 0.20f, 1.0f"
   };
   function gen_goal_code(obj) {
@@ -475,6 +616,9 @@
     document.querySelector("#hollowRadiusBtn").addEventListener("click", function() {
       setHollowRadius(document.querySelector("#hollowRadius").value);
     });
+    document.querySelector("#toggleConstrained").addEventListener("click", function() {
+      constrained = !constrained;
+    });
     document.querySelector("svg").addEventListener("mousedown", function(event) {
       var vector = transformCoordinates(event, this);
       UIManager.onMouseDown(vector.x, vector.y);
@@ -492,6 +636,13 @@
     document.querySelector("svg").addEventListener("mousemove", function(event) {
       var vector = transformCoordinates(event, this);
       UIManager.onMouseMove(vector.x, vector.y);
+    });
+    document.querySelector("#normalRadio").addEventListener("click", function(event) {
+      UIManager.state = UIManager.STATE_IDLE;
+      editMode = false;
+    });
+    document.querySelector("#editRadio").addEventListener("click", function(event) {
+      editMode = true;
     });
     document.body.addEventListener("keyup", function(event) {
       if (event.keyCode === 90) {
