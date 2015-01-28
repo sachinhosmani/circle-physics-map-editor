@@ -18,10 +18,16 @@
         <input type="radio" name="mode" value="Normal" id="normalRadio" checked>Normal</input>
         <input type="radio" name="mode" value="Edit" id="editRadio">Edit</input>
       </form>
+      <button id="simulate">Simulate</button>
+      <button id="stop" hidden>Stop</button>
+    </div>
+    <div id="simulationDiv" style="width: 700px; height: 700px; overflow: scroll;">
+      <canvas id="canvas" width="2000" height="2000" tabindex="1"></canvas>
     </div>
     <script src="svg.min.js"></script>
-    <script src="svg.draggable.js"></script>
+    <script src="svg.draggable.min.js"></script>
     <script src="SAT.min.js"></script>
+    <script src="Box2dWeb-2.1.a.3.js"></script>
     <script src="script.js"></script>
   </body>
 </html>
