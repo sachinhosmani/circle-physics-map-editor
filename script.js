@@ -11,6 +11,7 @@
   var constrained = true;
   var editMode = false;
   var simulationMode = false;
+  var showMarkingLines = true;
   /*var   b2Vec2 = Box2D.Common.Math.b2Vec2
     ,	b2BodyDef = Box2D.Dynamics.b2BodyDef
     ,	b2Body = Box2D.Dynamics.b2Body
@@ -81,9 +82,11 @@
     },
     onMouseMove: function(x, y) {
       if (simulationMode) return;
-      this._clearMarkingLines();
+      if (showMarkingLines) {
+        this._clearMarkingLines();
+        this._updateMarkingLines(x, y);
+      }
       this._clearMarkingBoxes();
-      this._updateMarkingLines(x, y);
       if (this.state === this.STATE_START || this.state === this.STATE_CIRCLE) {
         this.state = this.STATE_CIRCLE;
         var r = this.points[0].clone().sub(new SAT.Vector(x, y)).len();
@@ -857,8 +860,26 @@
     document.querySelector("#hollowRadiusBtn").addEventListener("click", function() {
       setHollowRadius(document.querySelector("#hollowRadius").value);
     });
-    document.querySelector("#toggleConstrained").addEventListener("click", function() {
-      constrained = !constrained;
+    document.querySelector("#enableConstrained").addEventListener("click", function() {
+      constrained = true;
+      this.hidden = true;
+      document.querySelector("#disableConstrained").hidden = false;
+    });
+    document.querySelector("#disableConstrained").addEventListener("click", function() {
+      constrained = false;
+      this.hidden = true;
+      document.querySelector("#enableConstrained").hidden = false;
+    });
+    document.querySelector("#enableMarkingLines").addEventListener("click", function() {
+      showMarkingLines = true;
+      this.hidden = true;
+      document.querySelector("#disableMarkingLines").hidden = false;
+    });
+    document.querySelector("#disableMarkingLines").addEventListener("click", function() {
+      showMarkingLines = false;
+      UIManager._clearMarkingLines();
+      this.hidden = true;
+      document.querySelector("#enableMarkingLines").hidden = false;
     });
     document.querySelector("svg").addEventListener("mousedown", function(event) {
       var vector = transformCoordinates(event, this);

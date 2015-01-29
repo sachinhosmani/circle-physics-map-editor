@@ -13,9 +13,13 @@
       <label>Hollow Radius: </label>
       <input type="text" id="hollowRadius" value="200"/>
       <button id="hollowRadiusBtn">Set</button>
-      <button id="toggleConstrained">Toggle Constrained</button>
+      <button id="enableConstrained" hidden>Enable Constrained</button>
+      <button id="disableConstrained">Disable Constrained</button>
       <button id="simulate">Simulate</button>
       <button id="stop" hidden>Stop</button>
+      <br/>
+      <button id="enableMarkingLines" hidden>Show Marking Lines</button>
+      <button id="disableMarkingLines">Hide Marking Lines</button>
       <form>
         <input type="radio" name="mode" value="Normal" id="normalRadio" checked>Normal</input>
         <input type="radio" name="mode" value="Edit" id="editRadio">Edit</input>
