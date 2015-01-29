@@ -11,7 +11,7 @@
   var constrained = true;
   var editMode = false;
   var simulationMode = false;
-  var   b2Vec2 = Box2D.Common.Math.b2Vec2
+  /*var   b2Vec2 = Box2D.Common.Math.b2Vec2
     ,	b2BodyDef = Box2D.Dynamics.b2BodyDef
     ,	b2Body = Box2D.Dynamics.b2Body
     ,	b2FixtureDef = Box2D.Dynamics.b2FixtureDef
@@ -22,7 +22,7 @@
     ,	b2CircleShape = Box2D.Collision.Shapes.b2CircleShape
     ,	b2EdgeChainDef = Box2D.Collision.Shapes.b2EdgeChainDef
     ,	b2DebugDraw = Box2D.Dynamics.b2DebugDraw
-     ;
+     ;*/
   var UIManager = {
     points: [],
     markingCircle: null,
@@ -639,16 +639,23 @@
   		}
       for (var i = 0; i < numPoints; i++) {
         var bodyDef = new b2BodyDef();
-        bodyDef.type = b2Body.b2_staticBody;
+        // bodyDef.type = b2Body.b2_staticBody;
+        bodyDef.type = b2_staticBody;
         bodyDef.angularDamping = angularDamping;
         var body = world.CreateBody(bodyDef);
-        var shape = new b2PolygonShape();
-        shape.SetAsEdge(points[i], points[(i + 1) % numPoints]);
+        /*var shape = new b2PolygonShape();
+        shape.SetAsEdge(points[i], points[(i + 1) % numPoints]);*/
+        var shape = new b2EdgeShape();
+        shape.Set(points[i], points[(i + 1) % numPoints]);
+        shape.vertex0 = points[((i % numPoints) + numPoints) % numPoints];
+        shape.vertex3 = points[(i + 2) % numPoints];
+        shape.hasVertex0 = shape.hasVertex3 = true;
         var fixtureDef = new b2FixtureDef();
         fixtureDef.shape = shape;
         fixtureDef.friction = friction;
         fixtureDef.restitution = restitution;
-        body.CreateFixture(fixtureDef);
+        // body.CreateFixture(fixtureDef);
+        body.CreateFixtureFromDef(fixtureDef);
       }
       return function() {
         return strokeAndFill(svg.circle(2 * importScale(radius)).move(graphSize / 2 - importScale(radius),
@@ -657,55 +664,88 @@
     }
     function createBox2dCircle(obj) {
       var x = obj.x, y = obj.y, radius = obj.radius;
-      var friction = 4.0, restitution = 0.04, angularDamping = 2.2;
+      var friction = 0.9, restitution = 0.04, angularDamping = 2.2, density = 1.0;
       var bodyDef = new b2BodyDef();
       bodyDef.angularDamping = angularDamping;
-      bodyDef.type = b2Body.b2_dynamicBody;
+      // bodyDef.type = (obj.nature == "dynamic" ? b2Body.b2_dynamicBody : b2Body.b2_staticBody);
+      bodyDef.type = (obj.nature == "dynamic" ? b2_dynamicBody : b2_staticBody);
       bodyDef.position.x = x;
       bodyDef.position.y = y;
       var body = world.CreateBody(bodyDef);
       var shape = new b2CircleShape();
-      shape.SetRadius(radius);
+      // shape.SetRadius(radius);
+      shape.radius = radius;
       var fixtureDef = new b2FixtureDef();
       fixtureDef.shape = shape;
       fixtureDef.friction = friction;
       fixtureDef.restitution = restitution;
-      body.CreateFixture(fixtureDef);
+      fixtureDef.density = density;
+      // body.CreateFixture(fixtureDef);
+      body.CreateFixtureFromDef(fixtureDef);
+      if (obj.type === "protagonist") {
+        world._protagonist = body;
+      }
+      function getColor() {
+        if (obj.type === "protagonist") {
+          return ShapeWrapper.colorMap[ShapeWrapper.NATURE_PROTAGONIST];
+        }
+        if (obj.type === "goal") {
+          return ShapeWrapper.colorMap[ShapeWrapper.NATURE_GOAL];
+        }
+        if (obj.nature === "dynamic") {
+          return ShapeWrapper.colorMap[ShapeWrapper.NATURE_DYNAMIC];
+        }
+        if (obj.type === "static") {
+          return ShapeWrapper.colorMap[ShapeWrapper.NATURE_STATIC];
+        }
+      }
       return function() {
-        return strokeAndFill(svg.circle(2 * importScale(radius))).
+        return strokeAndFill(svg.circle(2 * importScale(radius))).attr({fill: getColor()}).
           move(mapX(importScale(body.GetPosition().x) - importScale(radius)),
           mapY(importScale(body.GetPosition().y) + importScale(radius)));
       };
     }
     function createBox2dChain(obj) {
-      var friction = 4.0, restitution = 0, angularDamping = 2.2;
+      var friction = 4.0, restitution = 0.04, angularDamping = 2.2;
       var points = obj.points;
       for (var i = 0; i < points.length - 1; i++) {
         var pointA = new b2Vec2(points[i][0], points[i][1]);
         var pointB = new b2Vec2(points[i + 1][0], points[i + 1][1]);
         var bodyDef = new b2BodyDef();
-        bodyDef.type = (obj.nature == "dynamic" ? b2Body.b2_dynamicBody : b2Body.b2_staticBody);
+        // bodyDef.type = b2Body.b2_staticBody;
+        bodyDef.type = b2_staticBody;
         bodyDef.angularDamping = angularDamping;
         var body = world.CreateBody(bodyDef);
         var shape = new b2EdgeShape();
         shape.Set(pointA, pointB);
+        if (i > 0) {
+          shape.vertex0 = points[i - 1];
+          shape.hasVertex0 = true;
+        }
+        if (i < points.length - 2) {
+          shape.vertex3 = points[i + 2];
+          shape.hasVertex3 = true;
+        }
         var fixtureDef = new b2FixtureDef();
         fixtureDef.shape = shape;
         fixtureDef.friction = friction;
         fixtureDef.restitution = restitution;
-        body.CreateFixture(fixtureDef);
+        body.CreateFixtureFromDef(fixtureDef);
       }
       return function() {
+        var shapes = [];
         for (var i = 0; i < points.length - 1; i++) {
-          return svg.line(importScale(points[i][0]), importScale(points[i][1]),
-            importScale(points[i + 1][0]), importScale(points[i + 1][1])).
-            stroke({ color: "blue", width: 2 });
+          shapes.push(svg.line(mapX(importScale(points[i][0])), mapY(importScale(points[i][1])),
+            mapX(importScale(points[i + 1][0])), mapY(importScale(points[i + 1][1]))).
+            stroke({ color: "blue", width: 2 }));
         }
+        return shapes;
       };
     }
     var jsonObj = exportScene();
     var gravity = new b2Vec2(0.0, -35.0);
     var world = new b2World(gravity);
+    window.world = world;
     world.renderMethods = [];
     for (var i = 0; i < jsonObj.length; i++) {
       var obj = jsonObj[i];
@@ -725,13 +765,28 @@
     }
     return world;
   }
+  var force = new b2Vec2(0, 0);
+  function keyDownHandler(event) {
+    if (event.keyCode === 39) {
+      force.x = 135.0;
+    } else if (event.keyCode === 37) {
+      force.x = -135.0;
+    }
+  }
+  function keyUpHandler(event) {
+    if (event.keyCode === 39 || event.keyCode === 37) {
+      force.x = 0.0;
+    }
+  }
   function simulate() {
     function clearSVG() {
       simulate.background = strokeAndFill(svg.rect(graphSize, graphSize).
         move(0, 0));
     }
     var world = createBox2dEnv();
-    var debugDraw = new b2DebugDraw();
+    // var context = document.getElementById("canvas").getContext("2d");
+    // context.translate(graphSize / 2, graphSize / 2);
+    /*var debugDraw = new b2DebugDraw();
     var context = document.getElementById("canvas").getContext("2d");
     context.translate(graphSize / 2, graphSize / 2);
     context.scale(1, -1);
@@ -740,26 +795,37 @@
 		debugDraw.SetFillAlpha(0.5);
 		debugDraw.SetLineThickness(1.0);
 		debugDraw.SetFlags(b2DebugDraw.e_shapeBit | b2DebugDraw.e_jointBit);
-		world.SetDebugDraw(debugDraw);
+		world.SetDebugDraw(debugDraw);*/
+    document.body.addEventListener("keydown", keyDownHandler);
+    document.body.addEventListener("keyup", keyUpHandler);
     clearSVG();
     shapes.push();
     redrawAxes();
     var t1 = 0, t2;
+    function applyForce() {
+      world._protagonist && world._protagonist.ApplyForceToCenter(force);
+    }
     function animate(timestamp) {
       t2 = timestamp;
       if (simulationMode) {
+        applyForce();
         world.Step((t2 - t1) / 1000, 8, 3);
         t1 = t2;
-        context.clearRect( -graphSize / 2 , -graphSize / 2 , graphSize, graphSize );
+        // context.clearRect( -graphSize / 2 , -graphSize / 2 , graphSize, graphSize );
         simulate.shapes.forEach(function(shape) {
           shape.remove();
         });
         simulate.shapes.length = 0;
         world.renderMethods.forEach(function(method) {
-          simulate.shapes.push(method());
+          var shape = method();
+          if (shape instanceof Array) {
+            simulate.shapes.push.apply(shape);
+          } else {
+            simulate.shapes.push(shape);
+          }
         });
         redrawAxes();
-        world.DrawDebugData();
+        //world.DrawDebugData();
         window.requestAnimationFrame(animate);
       }
     }
@@ -776,14 +842,17 @@
       });
       simulate.shapes.length = 0;
     }
+    document.body.removeEventListener("keydown", keyDownHandler);
+    document.body.removeEventListener("keyup", keyUpHandler);
+    force.x = 0.0;
     redrawSVG();
   }
   function onLoad() {
     createSVG();
     document.querySelector("#canvasDiv").scrollTop = 1.3 * graphSize / 4;
     document.querySelector("#canvasDiv").scrollLeft = 1.3 * graphSize / 4;
-    document.querySelector("#simulationDiv").scrollTop = 1.3 * graphSize / 4;
-    document.querySelector("#simulationDiv").scrollLeft = 1.3 * graphSize / 4;
+    /*document.querySelector("#simulationDiv").scrollTop = 1.3 * graphSize / 4;
+    document.querySelector("#simulationDiv").scrollLeft = 1.3 * graphSize / 4;*/
     drawHollow(200);
     document.querySelector("#hollowRadiusBtn").addEventListener("click", function() {
       setHollowRadius(document.querySelector("#hollowRadius").value);
