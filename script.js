@@ -7,6 +7,8 @@
   var graphSize = 2000;
   var divWidth = 700;
   var divHeight = 700;
+  var phoneWidth = 543;
+  var phoneHeight = 230;
   var coordinateBar = document.querySelector("#coordinates");
   var shapeToSAT = {};
   var exportChainShapes = [];
@@ -14,18 +16,7 @@
   var editMode = false;
   var simulationMode = false;
   var showMarkingLines = true;
-  /*var   b2Vec2 = Box2D.Common.Math.b2Vec2
-    ,	b2BodyDef = Box2D.Dynamics.b2BodyDef
-    ,	b2Body = Box2D.Dynamics.b2Body
-    ,	b2FixtureDef = Box2D.Dynamics.b2FixtureDef
-    ,	b2Fixture = Box2D.Dynamics.b2Fixture
-    ,	b2World = Box2D.Dynamics.b2World
-    ,	b2MassData = Box2D.Collision.Shapes.b2MassData
-    ,	b2PolygonShape = Box2D.Collision.Shapes.b2PolygonShape
-    ,	b2CircleShape = Box2D.Collision.Shapes.b2CircleShape
-    ,	b2EdgeChainDef = Box2D.Collision.Shapes.b2EdgeChainDef
-    ,	b2DebugDraw = Box2D.Dynamics.b2DebugDraw
-     ;*/
+  var showPhoneMode = false;
   var UIManager = {
     points: [],
     markingCircle: null,
@@ -268,6 +259,10 @@
     wrapped.shape.dragmove = function(delta, event) {
       redrawAxes();
       updateCode();
+      if (wrapped._phoneBoundary) {
+        var SATShape = shapeToSAT[wrapped.id];
+        wrapped._phoneBoundary.move(SATShape.pos.x - phoneWidth / 2, SATShape.pos.y - phoneHeight / 2);
+      }
       //UIManager.cancelDraw();
     }
   }
@@ -334,7 +329,15 @@
         UIManager.cancelDraw();
         return;
       }
+      if (shape.nature === ShapeWrapper.NATURE_PROTAGONIST) {
+        shape._phoneBoundary.remove();
+        shape._phoneBoundary = null;
+      }
       shape.nature = (shape.nature + 1) % 4;
+      if (shape.nature === ShapeWrapper.NATURE_PROTAGONIST) {
+        shape._phoneBoundary = svg.rect(phoneWidth, phoneHeight).fill("none").stroke({ color: "green", width: 1 }).
+          move(mapX(x) - phoneWidth / 2, mapY(y) - phoneHeight / 2);
+      }
       shape.shape.attr({fill: ShapeWrapper.colorMap[shape.nature]});
       updateCode();
     });
@@ -453,6 +456,10 @@
 
   function removeShape(shape) {
     shape.shape.remove();
+    if (shape._phoneBoundary) {
+      shape._phoneBoundary.remove();
+      shape._phoneBoundary = null;
+    }
     delete shapeToSAT[shape.id];
     for (var i = shapes.length - 1; i >= 0; i--) {
       if (shapes[i].id === shape.id) {
@@ -705,13 +712,25 @@
         }
       }
       return function() {
+        var shape = strokeAndFill(svg.circle(2 * importScale(radius))).attr({fill: getColor()}).
+          move(mapX(importScale(body.GetPosition().x) - importScale(radius)),
+          mapY(importScale(body.GetPosition().y) + importScale(radius)));
         if (obj.type === "protagonist") {
           document.querySelector("#canvasDiv").scrollLeft = mapX(importScale(body.GetPosition().x)) - divWidth / 2;
           document.querySelector("#canvasDiv").scrollTop = mapY(importScale(body.GetPosition().y)) - divHeight / 2;
+          if (showPhoneMode) {
+            var paddedWidth = phoneWidth + 500;
+            var paddedHeight = phoneHeight + 500;
+            var phoneBoundary2 = svg.rect(paddedWidth, paddedHeight);
+            phoneBoundary2.fill("none").stroke({ color: "black", width: 500 }).
+              move(mapX(importScale(body.GetPosition().x)) - paddedWidth / 2, mapY((importScale(body.GetPosition().y))) - paddedHeight / 2);
+            var phoneBoundary = svg.rect(phoneWidth, phoneHeight);
+            phoneBoundary.fill("none").stroke({ color: "green", width: 1 }).
+              move(mapX(importScale(body.GetPosition().x)) - phoneWidth / 2, mapY((importScale(body.GetPosition().y))) - phoneHeight / 2);
+            return [shape, phoneBoundary, phoneBoundary2];
+          }
         }
-        return strokeAndFill(svg.circle(2 * importScale(radius))).attr({fill: getColor()}).
-          move(mapX(importScale(body.GetPosition().x) - importScale(radius)),
-          mapY(importScale(body.GetPosition().y) + importScale(radius)));
+        return shape;
       };
     }
     function createBox2dChain(obj) {
@@ -822,13 +841,16 @@
         t1 = t2;
         // context.clearRect( -graphSize / 2 , -graphSize / 2 , graphSize, graphSize );
         simulate.shapes.forEach(function(shape) {
+          if (!shape.remove) {
+            1;
+          }
           shape.remove();
         });
         simulate.shapes.length = 0;
         world.renderMethods.forEach(function(method) {
           var shape = method();
           if (shape instanceof Array) {
-            simulate.shapes.push.apply(shape);
+            simulate.shapes.push.apply(simulate.shapes, shape);
           } else {
             simulate.shapes.push(shape);
           }
@@ -890,6 +912,16 @@
       UIManager._clearMarkingLines();
       this.hidden = true;
       document.querySelector("#enableMarkingLines").hidden = false;
+    });
+    document.querySelector("#enablePhoneMode").addEventListener("click", function() {
+      showPhoneMode = true;
+      this.hidden = true;
+      document.querySelector("#disablePhoneMode").hidden = false;
+    });
+    document.querySelector("#disablePhoneMode").addEventListener("click", function() {
+      showPhoneMode = false;
+      this.hidden = true;
+      document.querySelector("#enablePhoneMode").hidden = false;
     });
     document.querySelector("svg").addEventListener("mousedown", function(event) {
       var vector = transformCoordinates(event, this);
