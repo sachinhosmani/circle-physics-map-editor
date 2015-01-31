@@ -5,6 +5,8 @@
   var hollow, hollowRadius;
   var xAxis, yAxis;
   var graphSize = 2000;
+  var divWidth = 700;
+  var divHeight = 700;
   var coordinateBar = document.querySelector("#coordinates");
   var shapeToSAT = {};
   var exportChainShapes = [];
@@ -703,6 +705,10 @@
         }
       }
       return function() {
+        if (obj.type === "protagonist") {
+          document.querySelector("#canvasDiv").scrollLeft = mapX(importScale(body.GetPosition().x)) - divWidth / 2;
+          document.querySelector("#canvasDiv").scrollTop = mapY(importScale(body.GetPosition().y)) - divHeight / 2;
+        }
         return strokeAndFill(svg.circle(2 * importScale(radius))).attr({fill: getColor()}).
           move(mapX(importScale(body.GetPosition().x) - importScale(radius)),
           mapY(importScale(body.GetPosition().y) + importScale(radius)));
@@ -849,11 +855,15 @@
     document.body.removeEventListener("keyup", keyUpHandler);
     force.x = 0.0;
     redrawSVG();
+    scrollSVG();
+  }
+  function scrollSVG() {
+    document.querySelector("#canvasDiv").scrollTop = 1.3 * graphSize / 4;
+    document.querySelector("#canvasDiv").scrollLeft = 1.3 * graphSize / 4;
   }
   function onLoad() {
     createSVG();
-    document.querySelector("#canvasDiv").scrollTop = 1.3 * graphSize / 4;
-    document.querySelector("#canvasDiv").scrollLeft = 1.3 * graphSize / 4;
+    scrollSVG();
     /*document.querySelector("#simulationDiv").scrollTop = 1.3 * graphSize / 4;
     document.querySelector("#simulationDiv").scrollLeft = 1.3 * graphSize / 4;*/
     drawHollow(200);
