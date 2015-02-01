@@ -17,6 +17,33 @@
   var simulationMode = false;
   var showMarkingLines = true;
   var showPhoneMode = false;
+  var gravity = -35;
+  var forceX = 127;
+  var oldScrollX = null, oldScrollY  = null;
+  var defaultPhysicsValues = {
+    circle: {
+      friction: 0.5,
+      restitution: 0,
+      angularDamping: 2.2,
+      density: 1.0
+    },
+    protagonist: {
+      friction: 0.5,
+      restitution: 0,
+      angularDamping: 2.2,
+      density: 0.9
+    },
+    hollow: {
+      friction: 1.6,
+      restitution: 0,
+      density: 1.0
+    },
+    chain: {
+      friction: 4.0,
+      restitution: 0,
+      density: 1.0
+    }
+  };
   var UIManager = {
     points: [],
     markingCircle: null,
@@ -645,7 +672,7 @@
   		var numPoints = Math.floor((2 * scale * radius));
   		var points = [];
   		var angle = 0;
-      var friction = 4.0, restitution = 0.04, angularDamping = 2.2;
+      var friction = defaultPhysicsValues.hollow.friction, restitution = defaultPhysicsValues.hollow.restitution;
   		for (var i = 0; i < numPoints; angle += angleDelta, i++) {
   			points.push(new b2Vec2(radius * Math.cos(angle), radius * Math.sin(angle)));
   		}
@@ -653,15 +680,15 @@
         var bodyDef = new b2BodyDef();
         // bodyDef.type = b2Body.b2_staticBody;
         bodyDef.type = b2_staticBody;
-        bodyDef.angularDamping = angularDamping;
+        bodyDef.allowSleep = true;
         var body = world.CreateBody(bodyDef);
         /*var shape = new b2PolygonShape();
         shape.SetAsEdge(points[i], points[(i + 1) % numPoints]);*/
         var shape = new b2EdgeShape();
         shape.Set(points[i], points[(i + 1) % numPoints]);
-        shape.vertex0 = points[((i % numPoints) + numPoints) % numPoints];
-        shape.vertex3 = points[(i + 2) % numPoints];
         shape.hasVertex0 = shape.hasVertex3 = true;
+        shape.vertex0 = points[(((i - 1) % numPoints) + numPoints) % numPoints];
+        shape.vertex3 = points[(i + 2) % numPoints];
         var fixtureDef = new b2FixtureDef();
         fixtureDef.shape = shape;
         fixtureDef.friction = friction;
@@ -676,8 +703,11 @@
     }
     function createBox2dCircle(obj) {
       var x = obj.x, y = obj.y, radius = obj.radius;
-      var friction = 0.9, restitution = 0.04, angularDamping = 2.2, density = 1.0;
+      var defaultObj = (obj.type === "protagonist") ? defaultPhysicsValues.protagonist : defaultPhysicsValues.circle;
+      var friction = defaultObj.friction, restitution = defaultObj.restitution;
+      var angularDamping = defaultObj.angularDamping, density = defaultObj.density;
       var bodyDef = new b2BodyDef();
+      bodyDef.allowSleep = true;
       bodyDef.angularDamping = angularDamping;
       // bodyDef.type = (obj.nature == "dynamic" ? b2Body.b2_dynamicBody : b2Body.b2_staticBody);
       bodyDef.type = (obj.nature == "dynamic" ? b2_dynamicBody : b2_staticBody);
@@ -692,6 +722,7 @@
       fixtureDef.friction = friction;
       fixtureDef.restitution = restitution;
       fixtureDef.density = density;
+      fixtureDef.angularDamping = angularDamping;
       // body.CreateFixture(fixtureDef);
       body.CreateFixtureFromDef(fixtureDef);
       if (obj.type === "protagonist") {
@@ -734,7 +765,7 @@
       };
     }
     function createBox2dChain(obj) {
-      var friction = 4.0, restitution = 0.04, angularDamping = 2.2;
+      var friction = defaultPhysicsValues.chain.friction, restitution = defaultPhysicsValues.chain.restitution;
       var points = obj.points;
       for (var i = 0; i < points.length - 1; i++) {
         var pointA = new b2Vec2(points[i][0], points[i][1]);
@@ -742,7 +773,8 @@
         var bodyDef = new b2BodyDef();
         // bodyDef.type = b2Body.b2_staticBody;
         bodyDef.type = b2_staticBody;
-        bodyDef.angularDamping = angularDamping;
+        bodyDef.allowSleep = true;
+        //bodyDef.angularDamping = angularDamping;
         var body = world.CreateBody(bodyDef);
         var shape = new b2EdgeShape();
         shape.Set(pointA, pointB);
@@ -771,8 +803,7 @@
       };
     }
     var jsonObj = exportScene();
-    var gravity = new b2Vec2(0.0, -35.0);
-    var world = new b2World(gravity);
+    var world = new b2World(new b2Vec2(0.0, gravity));
     window.world = world;
     world.renderMethods = [];
     for (var i = 0; i < jsonObj.length; i++) {
@@ -796,9 +827,9 @@
   var force = new b2Vec2(0, 0);
   function keyDownHandler(event) {
     if (event.keyCode === 39) {
-      force.x = 135.0;
+      force.x = forceX;
     } else if (event.keyCode === 37) {
-      force.x = -135.0;
+      force.x = -forceX;
     }
   }
   function keyUpHandler(event) {
@@ -841,9 +872,6 @@
         t1 = t2;
         // context.clearRect( -graphSize / 2 , -graphSize / 2 , graphSize, graphSize );
         simulate.shapes.forEach(function(shape) {
-          if (!shape.remove) {
-            1;
-          }
           shape.remove();
         });
         simulate.shapes.length = 0;
@@ -880,12 +908,21 @@
     scrollSVG();
   }
   function scrollSVG() {
-    document.querySelector("#canvasDiv").scrollTop = 1.3 * graphSize / 4;
-    document.querySelector("#canvasDiv").scrollLeft = 1.3 * graphSize / 4;
+    var scrollX = oldScrollX !== null ? oldScrollX : 1.3 * graphSize / 4;
+    var scrollY = oldScrollY !== null ? oldScrollY : 1.3 * graphSize / 4;
+    document.querySelector("#canvasDiv").scrollLeft = scrollX;
+    document.querySelector("#canvasDiv").scrollTop = scrollY;
+    oldScrollX = document.querySelector("#canvasDiv").scrollLeft;
+    oldScrollY = document.querySelector("#canvasDiv").scrollTop;
   }
   function onLoad() {
     createSVG();
     scrollSVG();
+    document.querySelector("#canvasDiv").addEventListener("scroll", function(event) {
+      if (simulationMode) return;
+      oldScrollX = this.scrollLeft;
+      oldScrollY = this.scrollTop;
+    });
     /*document.querySelector("#simulationDiv").scrollTop = 1.3 * graphSize / 4;
     document.querySelector("#simulationDiv").scrollLeft = 1.3 * graphSize / 4;*/
     drawHollow(200);
@@ -964,6 +1001,24 @@
       if (event.keyCode === 90) {
         undo();
       }
+    });
+    ["restitution-circle", "friction-circle", "density-circle", "angular-damping-circle",
+    "friction-hollow", "restitution-hollow", "density-hollow",
+    "friction-protagonist", "restitution-protagonist", "density-protagonist", "angular-damping-protagonist",
+    "friction-chain", "restitution-chain", "density-chain"].forEach(function(id) {
+      var el = document.querySelector("#" + id);
+      el.value = defaultPhysicsValues[el.dataset.type][el.dataset.var];
+      el.addEventListener("keyup", function(event) {
+        defaultPhysicsValues[this.dataset.type][this.dataset.var] = parseFloat(this.value);
+      });
+    });
+    document.querySelector("#gravity").value = gravity;
+    document.querySelector("#force").value = forceX;
+    document.querySelector("#gravity").addEventListener("keyup", function(event) {
+      gravity = parseFloat(this.value);
+    });
+    document.querySelector("#force").addEventListener("keyup", function(event) {
+      forceX = parseFloat(this.value);
     });
   }
   window.addEventListener("load", onLoad);

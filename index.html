@@ -27,6 +27,32 @@
         <input type="radio" name="mode" value="Edit" id="editRadio">Edit</input>
       </form>
     </div>
+    <div id="box2d-config">
+      <p>
+        <b>Circle:</b> <label>Friction</label><input type="input" data-var="friction" data-type="circle" id="friction-circle" />
+        <label>Restitution</label><input type="input" data-var="restitution" data-type="circle" id="restitution-circle" />
+        <label>Density</label><input type="input" data-var="density" data-type="circle" id="density-circle" />
+        <label>Angular Damping</label><input type="input" data-var="angularDamping" data-type="circle" id="angular-damping-circle" />
+      </p>
+      <p>
+        <b>Hollow:</b> <label>Friction</label><input type="input" data-var="friction" data-type="hollow" id="friction-hollow" />
+        <label>Restitution</label><input type="input" data-var="restitution" data-type="hollow" id="restitution-hollow" />
+        <label>Density</label><input type="input" data-var="density" data-type="hollow" id="density-hollow" />
+      </p>
+      <p>
+        <b>Protagonist:</b> <label>Friction</label><input type="input" data-var="friction" data-type="protagonist" id="friction-protagonist" />
+        <label>Restitution</label><input type="input" data-var="restitution" data-type="protagonist" id="restitution-protagonist" />
+        <label>Density</label><input type="input" data-var="density" data-type="protagonist" id="density-protagonist" />
+        <label>Angular Damping</label><input type="input" data-var="angularDamping" data-type="protagonist" id="angular-damping-protagonist" />
+      </p>
+      <p>
+        <b>Chain:</b> <label>Friction</label><input type="input" data-var="friction" data-type="chain" id="friction-chain" />
+        <label>Restitution</label><input type="input" data-var="restitution" data-type="chain" id="restitution-chain" />
+        <label>Density</label><input type="input" data-var="density" data-type="chain" id="density-chain" />
+      </p>
+      <label>Gravity</label><input type="input" id="gravity" />
+      <label>Force</label><input type="input" id="force" />
+    </div>
     <!--<div id="simulationDiv" style="width: 700px; height: 700px; overflow: scroll;">
       <canvas id="canvas" width="2000" height="2000" tabindex="1"></canvas>
     </div>-->
