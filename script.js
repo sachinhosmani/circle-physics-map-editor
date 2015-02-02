@@ -2,47 +2,63 @@
   var svg;
   var shapes = [];
   var lastShapes = [];
+  var background;
   var hollow, hollowRadius;
   var xAxis, yAxis;
   var graphSize = 2000;
   var divWidth = 700;
   var divHeight = 700;
-  var phoneWidth = 543;
-  var phoneHeight = 230;
+  var phoneWidth = importScale(100 / 4.3 / 1.1);
+  var phoneHeight = importScale(100 * 230 / 500 / 4.3 * 1.2);
   var coordinateBar = document.querySelector("#coordinates");
   var shapeToSAT = {};
   var exportChainShapes = [];
   var constrained = true;
   var editMode = false;
   var simulationMode = false;
-  var showMarkingLines = true;
+  var showMarkingLines = false;
   var showPhoneMode = false;
-  var gravity = -35;
-  var forceX = 127;
+  var gravity = -37;
+  var forceX = 130;
   var oldScrollX = null, oldScrollY  = null;
+  function exportScale(n) {
+    return n / 30;
+  }
+  function importScale(val) {
+    return val * 17;
+  }
   var defaultPhysicsValues = {
     circle: {
-      friction: 0.5,
+      friction: 0.2,
       restitution: 0,
       angularDamping: 2.2,
       density: 1.0
     },
     protagonist: {
-      friction: 0.5,
+      friction: 0.2,
       restitution: 0,
       angularDamping: 2.2,
-      density: 0.9
+      density: 1
     },
     hollow: {
-      friction: 1.6,
+      friction: 3,
       restitution: 0,
       density: 1.0
     },
     chain: {
-      friction: 4.0,
+      friction: 3,
       restitution: 0,
       density: 1.0
     }
+  };
+  var defaultColors = {
+    static: "#563b1b",
+    protagonist: "#936710",
+    hollow: "#d89545",
+    chain: "#563b1b",
+    goal: "#d2bb69",
+    background: "#563b1b",
+    dynamic: "#434d42"
   };
   var UIManager = {
     points: [],
@@ -250,6 +266,8 @@
       coordinateBar.innerHTML = coords.x +
         ", " + coords.y;
     });
+    background = strokeAndFill(svg.rect(graphSize, graphSize).
+      move(0, 0), "background");
     drawAxes();
   }
   function drawAxes() {
@@ -276,8 +294,12 @@
   function deMapY(y) {
     return graphSize / 2 - y;
   }
-  function strokeAndFill(obj) {
-    return obj.stroke({ color: "blue", width: 2 }).attr({fill: "white"});
+  function strokeAndFill(obj, type) {
+    var color = defaultColors[type];
+    if (type == "chain") {
+      return obj.stroke({color: defaultColors[type], width: 2});
+    }
+    return obj.attr({fill: color});
   }
   function makeDraggable(wrapped) {
     wrapped.shape.draggable(function(x, y) {
@@ -310,13 +332,13 @@
   }
   function drawPoint(x, y) {
     var r = 1;
-    var shape = new ShapeWrapper(strokeAndFill(svg.circle(2 * r).move(mapX(x - r), mapY(y + r))), ShapeWrapper.TYPE_CIRCLE);
+    var shape = new ShapeWrapper(strokeAndFill(svg.circle(2 * r).move(mapX(x - r), mapY(y + r), "static")), ShapeWrapper.TYPE_CIRCLE);
     shape.x = x;
     shape.y = y;
     return shape;
   }
   function drawHollow(r) {
-    hollow = strokeAndFill(svg.circle(2 * r).move(graphSize / 2 - r, graphSize / 2 - r));
+    hollow = strokeAndFill(svg.circle(2 * r).move(graphSize / 2 - r, graphSize / 2 - r), "hollow");
     redrawAxes();
     hollowRadius = r;
     updateCode();
@@ -337,7 +359,7 @@
     updateCode();
   }
   function drawCircle(x, y, r, dummy) {
-    var circle = strokeAndFill(svg.circle(2 * r).move(mapX(x - r), mapY(y + r)));
+    var circle = strokeAndFill(svg.circle(2 * r).move(mapX(x - r), mapY(y + r)), "static");
     redrawAxes();
     var shape = new ShapeWrapper(circle, ShapeWrapper.TYPE_CIRCLE);
     circle.mousedown(function() {
@@ -365,7 +387,20 @@
         shape._phoneBoundary = svg.rect(phoneWidth, phoneHeight).fill("none").stroke({ color: "green", width: 1 }).
           move(mapX(x) - phoneWidth / 2, mapY(y) - phoneHeight / 2);
       }
-      shape.shape.attr({fill: ShapeWrapper.colorMap[shape.nature]});
+      switch (shape.nature) {
+        case ShapeWrapper.NATURE_PROTAGONIST:
+          shape.shape.attr({fill: defaultColors["protagonist"]});
+          break;
+        case ShapeWrapper.NATURE_GOAL:
+          shape.shape.attr({fill: defaultColors["goal"]});
+          break;
+        case ShapeWrapper.NATURE_STATIC:
+          shape.shape.attr({fill: defaultColors["static"]});
+          break;
+        case ShapeWrapper.NATURE_DYNAMIC:
+          shape.shape.attr({fill: defaultColors["dynamic"]});
+          break;
+      }
       updateCode();
     });
     makeDraggable(shape);
@@ -392,7 +427,7 @@
       pointsString += mapX(points[i][0]) + "," + mapY(points[i][1]) + " ";
     }
     pointsString += mapX(points[i][0]) + "," + mapY(points[i][1]);
-    var polygon = strokeAndFill(svg.polygon(pointsString));
+    var polygon = strokeAndFill(svg.polygon(pointsString), "chain");
     var shape = new ShapeWrapper(polygon, ShapeWrapper.TYPE_POLYGON);
     redrawAxes();
     if (dummy) {
@@ -512,9 +547,6 @@
     updateCode();
   }
   function exportScene() {
-    function exportScale(n) {
-      return n / 30;
-    }
     var scene = [];
     if (hollow) {
       scene.push({
@@ -662,9 +694,6 @@
     document.querySelector("#java").innerHTML = gen_code(jsonObj);
   }
   function createBox2dEnv() {
-    function importScale(val) {
-      return val * 30;
-    }
     function createBox2dHollow(obj) {
       var radius = obj.radius;
       var scale = 20;
@@ -698,7 +727,7 @@
       }
       return function() {
         return strokeAndFill(svg.circle(2 * importScale(radius)).move(graphSize / 2 - importScale(radius),
-          graphSize / 2 - importScale(radius)));
+          graphSize / 2 - importScale(radius)), "hollow");
       };
     }
     function createBox2dCircle(obj) {
@@ -728,22 +757,14 @@
       if (obj.type === "protagonist") {
         world._protagonist = body;
       }
-      function getColor() {
-        if (obj.type === "protagonist") {
-          return ShapeWrapper.colorMap[ShapeWrapper.NATURE_PROTAGONIST];
+      function getType() {
+        if (obj.type === "protagonist" || obj.type === "goal") {
+          return obj.type;
         }
-        if (obj.type === "goal") {
-          return ShapeWrapper.colorMap[ShapeWrapper.NATURE_GOAL];
-        }
-        if (obj.nature === "dynamic") {
-          return ShapeWrapper.colorMap[ShapeWrapper.NATURE_DYNAMIC];
-        }
-        if (obj.type === "static") {
-          return ShapeWrapper.colorMap[ShapeWrapper.NATURE_STATIC];
-        }
+        return obj.nature;
       }
       return function() {
-        var shape = strokeAndFill(svg.circle(2 * importScale(radius))).attr({fill: getColor()}).
+        var shape = strokeAndFill(svg.circle(2 * importScale(radius)), getType()).
           move(mapX(importScale(body.GetPosition().x) - importScale(radius)),
           mapY(importScale(body.GetPosition().y) + importScale(radius)));
         if (obj.type === "protagonist") {
@@ -795,9 +816,8 @@
       return function() {
         var shapes = [];
         for (var i = 0; i < points.length - 1; i++) {
-          shapes.push(svg.line(mapX(importScale(points[i][0])), mapY(importScale(points[i][1])),
-            mapX(importScale(points[i + 1][0])), mapY(importScale(points[i + 1][1]))).
-            stroke({ color: "blue", width: 2 }));
+          shapes.push(strokeAndFill(svg.line(mapX(importScale(points[i][0])), mapY(importScale(points[i][1])),
+            mapX(importScale(points[i + 1][0])), mapY(importScale(points[i + 1][1]))), "chain"));
         }
         return shapes;
       };
@@ -806,6 +826,7 @@
     var world = new b2World(new b2Vec2(0.0, gravity));
     window.world = world;
     world.renderMethods = [];
+    var protagonistMethod = [];
     for (var i = 0; i < jsonObj.length; i++) {
       var obj = jsonObj[i];
       switch (obj.type) {
@@ -814,13 +835,18 @@
           break;
         case "circle":
         case "goal":
-        case "protagonist":
           world.renderMethods.push(createBox2dCircle(obj));
+          break;
+        case "protagonist":
+          protagonistMethod = createBox2dCircle(obj);
           break;
         case "chain":
           world.renderMethods.push(createBox2dChain(obj));
           break;
       }
+    }
+    if (protagonistMethod) {
+      world.renderMethods.push(protagonistMethod);
     }
     return world;
   }
@@ -840,7 +866,7 @@
   function simulate() {
     function clearSVG() {
       simulate.background = strokeAndFill(svg.rect(graphSize, graphSize).
-        move(0, 0));
+        move(0, 0), "background");
     }
     var world = createBox2dEnv();
     // var context = document.getElementById("canvas").getContext("2d");
@@ -1019,6 +1045,41 @@
     });
     document.querySelector("#force").addEventListener("keyup", function(event) {
       forceX = parseFloat(this.value);
+    });
+    ["protagonist-color", "hollow-color", "background-color", "dynamic-color",
+    "static-color", "chain-color", "goal-color"].forEach(function(id) {
+      var el = document.querySelector("#" + id);
+      el.value = defaultColors[el.dataset.type];
+      el.addEventListener("change", function(event) {
+        defaultColors[this.dataset.type] = this.value;
+        shapes.filter(function(shape) {
+          switch (el.dataset.type) {
+            case "protagonist":
+              return shape.nature === ShapeWrapper.NATURE_PROTAGONIST;
+              break;
+            case "goal":
+              return shape.nature === ShapeWrapper.NATURE_GOAL;
+              break;
+            case "dynamic":
+              return shape.type === ShapeWrapper.NATURE_DYNAMIC;
+              break;
+            case "static":
+              return shape.nature === ShapeWrapper.NATURE_STATIC;
+              break;
+            case "chain":
+              return shape.type === ShapeWrapper.TYPE_POLYGON;
+              break;
+            return false;
+          }
+        }).forEach(function(shape) {
+          strokeAndFill(shape.shape, el.dataset.type);
+        });
+        if (el.dataset.type === "hollow") {
+          strokeAndFill(hollow, el.dataset.type);
+        } else if (el.dataset.type === "background") {
+          strokeAndFill(background, el.dataset.type);
+        }
+      });
     });
   }
   window.addEventListener("load", onLoad);
