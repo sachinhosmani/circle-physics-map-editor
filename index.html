@@ -8,8 +8,9 @@
       <div>Coordinates:
         <span id="coordinates"></span>
       </div>
-      <p><textarea readonly id="json" style="width: 600px; height: 80px; overflow: scroll;"></textarea></p>
-      <p><textarea readonly id="java" style="width: 600px; height: 480px; overflow: scroll;"></textarea></p>
+      <p><textarea id="json" style="width: 600px; height: 80px; overflow: scroll;"></textarea></p>
+      <p><button id="import">Import</button></p>
+      <p><textarea readonly id="java" style="width: 600px; height: 440px; overflow: scroll;"></textarea></p>
       <label>Hollow Radius: </label>
       <input type="text" id="hollowRadius" value="200"/>
       <button id="hollowRadiusBtn">Set</button>
@@ -20,8 +21,8 @@
       <button id="simulate">Simulate</button>
       <button id="stop" hidden>Stop</button>
       <br/>
-      <button id="enableMarkingLines" hidden>Show Marking Lines</button>
-      <button id="disableMarkingLines">Hide Marking Lines</button>
+      <button id="enableMarkingLines">Show Marking Lines</button>
+      <button id="disableMarkingLines" hidden>Hide Marking Lines</button>
       <form>
         <input type="radio" name="mode" value="Normal" id="normalRadio" checked>Normal</input>
         <input type="radio" name="mode" value="Edit" id="editRadio">Edit</input>

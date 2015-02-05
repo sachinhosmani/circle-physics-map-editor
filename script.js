@@ -8,8 +8,8 @@
   var graphSize = 2000;
   var divWidth = 700;
   var divHeight = 700;
-  var phoneWidth = importScale(100 / 4.3 / 1.1);
-  var phoneHeight = importScale(100 * 230 / 500 / 4.3 * 1.2);
+  var phoneWidth = simulateScale(100 / 4.3 / 1.1);
+  var phoneHeight = simulateScale(100 * 230 / 500 / 4.3 * 1.2);
   var coordinateBar = document.querySelector("#coordinates");
   var shapeToSAT = {};
   var exportChainShapes = [];
@@ -24,8 +24,11 @@
   function exportScale(n) {
     return n / 30;
   }
-  function importScale(val) {
+  function simulateScale(val) {
     return val * 17;
+  }
+  function importScale(val) {
+    return val * 30;
   }
   var defaultPhysicsValues = {
     circle: {
@@ -358,6 +361,32 @@
     redrawAxes();
     updateCode();
   }
+  function nextNature(shape, x, y) {
+    if (shape.nature === ShapeWrapper.NATURE_PROTAGONIST) {
+      shape._phoneBoundary.remove();
+      shape._phoneBoundary = null;
+    }
+    shape.nature = (shape.nature + 1) % 4;
+    if (shape.nature === ShapeWrapper.NATURE_PROTAGONIST) {
+      shape._phoneBoundary = svg.rect(phoneWidth, phoneHeight).fill("none").stroke({ color: "green", width: 1 }).
+        move(mapX(x) - phoneWidth / 2, mapY(y) - phoneHeight / 2);
+    }
+    switch (shape.nature) {
+      case ShapeWrapper.NATURE_PROTAGONIST:
+        shape.shape.attr({fill: defaultColors["protagonist"]});
+        break;
+      case ShapeWrapper.NATURE_GOAL:
+        shape.shape.attr({fill: defaultColors["goal"]});
+        break;
+      case ShapeWrapper.NATURE_STATIC:
+        shape.shape.attr({fill: defaultColors["static"]});
+        break;
+      case ShapeWrapper.NATURE_DYNAMIC:
+        shape.shape.attr({fill: defaultColors["dynamic"]});
+        break;
+    }
+    updateCode();
+  }
   function drawCircle(x, y, r, dummy) {
     var circle = strokeAndFill(svg.circle(2 * r).move(mapX(x - r), mapY(y + r)), "static");
     redrawAxes();
@@ -378,30 +407,7 @@
         UIManager.cancelDraw();
         return;
       }
-      if (shape.nature === ShapeWrapper.NATURE_PROTAGONIST) {
-        shape._phoneBoundary.remove();
-        shape._phoneBoundary = null;
-      }
-      shape.nature = (shape.nature + 1) % 4;
-      if (shape.nature === ShapeWrapper.NATURE_PROTAGONIST) {
-        shape._phoneBoundary = svg.rect(phoneWidth, phoneHeight).fill("none").stroke({ color: "green", width: 1 }).
-          move(mapX(x) - phoneWidth / 2, mapY(y) - phoneHeight / 2);
-      }
-      switch (shape.nature) {
-        case ShapeWrapper.NATURE_PROTAGONIST:
-          shape.shape.attr({fill: defaultColors["protagonist"]});
-          break;
-        case ShapeWrapper.NATURE_GOAL:
-          shape.shape.attr({fill: defaultColors["goal"]});
-          break;
-        case ShapeWrapper.NATURE_STATIC:
-          shape.shape.attr({fill: defaultColors["static"]});
-          break;
-        case ShapeWrapper.NATURE_DYNAMIC:
-          shape.shape.attr({fill: defaultColors["dynamic"]});
-          break;
-      }
-      updateCode();
+      nextNature(shape, x, y);
     });
     makeDraggable(shape);
     lastShapes.push([shape]);
@@ -597,7 +603,68 @@
         })
       });
     });
-    return scene;
+    return {
+      scene: scene,
+      physicsValues: defaultPhysicsValues,
+      colors: defaultColors
+    };
+  }
+  function destroyAll() {
+    shapes.forEach(function(shape) {
+      shape.shape.remove();
+    });
+    shapes.length = 0;
+    shapeToSAT = {};
+    hollow.remove();
+    hollow = null;
+    exportChainShapes.length = 0;
+    lastShapes.length = 0;
+  }
+  function importScene(json) {
+    if (simulationMode) {
+      return;
+    }
+    destroyAll();
+    var scene = json.scene;
+    defaultPhysicsValues = json.physicsValues;
+    defaultColors = json.colors;
+    strokeAndFill(background, "background");
+    for (var i = 0; i < scene.length; i++) {
+      var obj = scene[i];
+      switch (obj.type) {
+        case "circle":
+          var x = importScale(obj.x);
+          var y = importScale(obj.y);
+          var shape = drawCircle(x, y, importScale(obj.radius));
+          if (obj.nature === "dynamic") {
+            nextNature(shape, x, y);
+          }
+          break;
+        case "protagonist":
+          var x = importScale(obj.x);
+          var y = importScale(obj.y);
+          var shape = drawCircle(x, y, importScale(obj.radius));
+          nextNature(shape, x, y);
+          nextNature(shape, x, y);
+          break;
+        case "goal":
+          var x = importScale(obj.x);
+          var y = importScale(obj.y);
+          var shape = drawCircle(x, y, importScale(obj.radius));
+          nextNature(shape, x, y);
+          nextNature(shape, x, y);
+          nextNature(shape, x, y);
+          break;
+        case "hollow":
+          drawHollow(importScale(obj.radius));
+          break;
+        case "chain":
+          drawChainShape(obj.points.map(function(point) {
+            return [importScale(point[0]), importScale(point[1])];
+          }));
+          break;
+      }
+    }
   }
   var typeToColor = {
     circle: "0.13f ,0.62f, 0.20f, 1.0f",
@@ -666,6 +733,9 @@
   }
   function gen_code(scene) {
     var code = "";
+    var colors = scene.colors;
+    var physicsValues = scene.physicsValues;
+    scene = scene.scene;
     for (var i = 0; i < scene.length; i++) {
       var obj = scene[i];
       switch(obj.type) {
@@ -726,8 +796,8 @@
         body.CreateFixtureFromDef(fixtureDef);
       }
       return function() {
-        return strokeAndFill(svg.circle(2 * importScale(radius)).move(graphSize / 2 - importScale(radius),
-          graphSize / 2 - importScale(radius)), "hollow");
+        return strokeAndFill(svg.circle(2 * simulateScale(radius)).move(graphSize / 2 - simulateScale(radius),
+          graphSize / 2 - simulateScale(radius)), "hollow");
       };
     }
     function createBox2dCircle(obj) {
@@ -764,21 +834,21 @@
         return obj.nature;
       }
       return function() {
-        var shape = strokeAndFill(svg.circle(2 * importScale(radius)), getType()).
-          move(mapX(importScale(body.GetPosition().x) - importScale(radius)),
-          mapY(importScale(body.GetPosition().y) + importScale(radius)));
+        var shape = strokeAndFill(svg.circle(2 * simulateScale(radius)), getType()).
+          move(mapX(simulateScale(body.GetPosition().x) - simulateScale(radius)),
+          mapY(simulateScale(body.GetPosition().y) + simulateScale(radius)));
         if (obj.type === "protagonist") {
-          document.querySelector("#canvasDiv").scrollLeft = mapX(importScale(body.GetPosition().x)) - divWidth / 2;
-          document.querySelector("#canvasDiv").scrollTop = mapY(importScale(body.GetPosition().y)) - divHeight / 2;
+          document.querySelector("#canvasDiv").scrollLeft = mapX(simulateScale(body.GetPosition().x)) - divWidth / 2;
+          document.querySelector("#canvasDiv").scrollTop = mapY(simulateScale(body.GetPosition().y)) - divHeight / 2;
           if (showPhoneMode) {
             var paddedWidth = phoneWidth + 500;
             var paddedHeight = phoneHeight + 500;
             var phoneBoundary2 = svg.rect(paddedWidth, paddedHeight);
             phoneBoundary2.fill("none").stroke({ color: "black", width: 500 }).
-              move(mapX(importScale(body.GetPosition().x)) - paddedWidth / 2, mapY((importScale(body.GetPosition().y))) - paddedHeight / 2);
+              move(mapX(simulateScale(body.GetPosition().x)) - paddedWidth / 2, mapY((simulateScale(body.GetPosition().y))) - paddedHeight / 2);
             var phoneBoundary = svg.rect(phoneWidth, phoneHeight);
             phoneBoundary.fill("none").stroke({ color: "green", width: 1 }).
-              move(mapX(importScale(body.GetPosition().x)) - phoneWidth / 2, mapY((importScale(body.GetPosition().y))) - phoneHeight / 2);
+              move(mapX(simulateScale(body.GetPosition().x)) - phoneWidth / 2, mapY((simulateScale(body.GetPosition().y))) - phoneHeight / 2);
             return [shape, phoneBoundary, phoneBoundary2];
           }
         }
@@ -816,13 +886,13 @@
       return function() {
         var shapes = [];
         for (var i = 0; i < points.length - 1; i++) {
-          shapes.push(strokeAndFill(svg.line(mapX(importScale(points[i][0])), mapY(importScale(points[i][1])),
-            mapX(importScale(points[i + 1][0])), mapY(importScale(points[i + 1][1]))), "chain"));
+          shapes.push(strokeAndFill(svg.line(mapX(simulateScale(points[i][0])), mapY(simulateScale(points[i][1])),
+            mapX(simulateScale(points[i + 1][0])), mapY(simulateScale(points[i + 1][1]))), "chain"));
         }
         return shapes;
       };
     }
-    var jsonObj = exportScene();
+    var jsonObj = exportScene().scene;
     var world = new b2World(new b2Vec2(0.0, gravity));
     window.world = world;
     world.renderMethods = [];
@@ -859,7 +929,9 @@
     }
   }
   function keyUpHandler(event) {
-    if (event.keyCode === 39 || event.keyCode === 37) {
+    if (event.keyCode === 39 && force.x > 0) {
+      force.x = 0.0;
+    } else if (event.keyCode === 37 && force.x < 0) {
       force.x = 0.0;
     }
   }
@@ -1079,7 +1151,11 @@
         } else if (el.dataset.type === "background") {
           strokeAndFill(background, el.dataset.type);
         }
+        updateCode();
       });
+    });
+    document.querySelector("#import").addEventListener("click", function(event) {
+      importScene(JSON.parse(document.querySelector("#json").value));
     });
   }
   window.addEventListener("load", onLoad);
