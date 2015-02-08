@@ -18,6 +18,7 @@
   var simulationMode = false;
   var showMarkingLines = false;
   var showPhoneMode = false;
+  var curveMode = false;
   var gravity = -37;
   var forceX = 130;
   var oldScrollX = null, oldScrollY  = null;
@@ -76,6 +77,7 @@
     STATE_CIRCLE: 3,
     STATE_POLYGON: 4,
     STATE_CANCELLED: 5,
+    STATE_CURVE: 6,
     state: 1,
     onMouseDown: function(x, y) {
       if (simulationMode) return;
@@ -102,7 +104,23 @@
         this.points = [];
         this._clearMarkingPoints();
       } else if (this.state === this.STATE_START) {
-        this.state = this.STATE_POLYGON;
+        this.state = curveMode ? this.STATE_CURVE : this.STATE_POLYGON;
+      }
+      if (this.state === this.STATE_CURVE) {
+        if (this.points.length === 4) {
+          var points = [];
+          this.points.forEach(function(point) {
+            points.push([point.x, point.y]);
+          });
+          drawCurve(points);
+          this.state = this.STATE_IDLE;
+          this.markingCircle = null;
+          this.points = [];
+          this._clearMarkingPoints();
+        } else if (this.points.length > 4) {
+          this.cancelDraw();
+          this.state = this.STATE_IDLE;
+        }
       }
     },
     onContextMenu: function(x, y) {
@@ -126,7 +144,7 @@
         this._updateMarkingLines(x, y);
       }
       this._clearMarkingBoxes();
-      if (this.state === this.STATE_START || this.state === this.STATE_CIRCLE) {
+      if (!curveMode && (this.state === this.STATE_START || this.state === this.STATE_CIRCLE)) {
         this.state = this.STATE_CIRCLE;
         var r = this.points[0].clone().sub(new SAT.Vector(x, y)).len();
         this._updateMarkingBoxes(r);
@@ -240,6 +258,7 @@
   }
   ShapeWrapper.TYPE_CIRCLE = 1;
   ShapeWrapper.TYPE_POLYGON = 2;
+  ShapeWrapper.TYPE_CURVE = 3;
   ShapeWrapper.NATURE_STATIC = 0;
   ShapeWrapper.NATURE_DYNAMIC = 1;
   ShapeWrapper.NATURE_PROTAGONIST = 2;
@@ -480,6 +499,29 @@
     exportChainShapes.push(points.slice());
     updateCode();
   }
+  function drawCurve(points, dummy) {
+    if (points.length !== 4) {
+      return;
+    }
+    var pathString = "M " + mapX(points[0][0]) + " " + mapY(points[0][1]) + "C";
+    for (var i = 1; i < 4; i++) {
+      pathString += " " + mapX(points[i][0]) + " " + mapY(points[i][1]);
+    }
+    var curve = svg.path(pathString).fill("none").stroke({color: defaultColors.chain, width: 2});
+    //var shape = new ShapeWrapper(curve, ShapeWrapper.TYPE_CURVE);
+    //storeShape(shape);
+    //lastShapes.push([shape]);
+    var curveLength = curve.node.getTotalLength();
+    var chainPoints = [];
+    var increment = 10 / curveLength;
+    for (var i = 0; i < 1.0; i += increment) {
+      var point = curve.node.getPointAtLength(curveLength * i);
+      chainPoints.push([deMapX(point.x), deMapY(point.y)]);
+    }
+    console.log(chainPoints);
+    curve.remove();
+    drawChainShape(chainPoints);
+  }
   function checkOverlaps(shape, x, y) {
     function checkOverlap(aShape) {
       var res = checkOverlaps.lambdas[shape.type][aShape.type](shapeToSAT[shape.id],
@@ -573,20 +615,20 @@
         };
         switch(shape.nature) {
         case ShapeWrapper.NATURE_STATIC:
-          obj.nature = "static",
-          obj.type = "circle"
+          obj.nature = "static";
+          obj.type = "circle";
           break;
         case ShapeWrapper.NATURE_DYNAMIC:
-          obj.nature = "dynamic",
-          obj.type = "circle"
+          obj.nature = "dynamic";
+          obj.type = "circle";
           break;
         case ShapeWrapper.NATURE_PROTAGONIST:
-          obj.nature = "dynamic",
-          obj.type = "protagonist"
+          obj.nature = "dynamic";
+          obj.type = "protagonist";
           break;
         case ShapeWrapper.NATURE_GOAL:
-          obj.nature = "static",
-          obj.type = "goal"
+          obj.nature = "static";
+          obj.type = "goal";
           break;
         default:
           throw new Error("Invalid shape.nature");
@@ -767,14 +809,14 @@
     function createBox2dHollow(obj) {
       var radius = obj.radius;
       var scale = 20;
-  		var angleDelta = (Math.PI / radius / scale);
-  		var numPoints = Math.floor((2 * scale * radius));
-  		var points = [];
-  		var angle = 0;
+      var angleDelta = (Math.PI / radius / scale);
+      var numPoints = Math.floor((2 * scale * radius));
+      var points = [];
+      var angle = 0;
       var friction = defaultPhysicsValues.hollow.friction, restitution = defaultPhysicsValues.hollow.restitution;
-  		for (var i = 0; i < numPoints; angle += angleDelta, i++) {
-  			points.push(new b2Vec2(radius * Math.cos(angle), radius * Math.sin(angle)));
-  		}
+      for (var i = 0; i < numPoints; angle += angleDelta, i++) {
+        points.push(new b2Vec2(radius * Math.cos(angle), radius * Math.sin(angle)));
+      }
       for (var i = 0; i < numPoints; i++) {
         var bodyDef = new b2BodyDef();
         // bodyDef.type = b2Body.b2_staticBody;
@@ -896,7 +938,7 @@
     var world = new b2World(new b2Vec2(0.0, gravity));
     window.world = world;
     world.renderMethods = [];
-    var protagonistMethod = [];
+    var protagonistMethod = null;
     for (var i = 0; i < jsonObj.length; i++) {
       var obj = jsonObj[i];
       switch (obj.type) {
@@ -1021,8 +1063,6 @@
       oldScrollX = this.scrollLeft;
       oldScrollY = this.scrollTop;
     });
-    /*document.querySelector("#simulationDiv").scrollTop = 1.3 * graphSize / 4;
-    document.querySelector("#simulationDiv").scrollLeft = 1.3 * graphSize / 4;*/
     drawHollow(200);
     document.querySelector("#hollowRadiusBtn").addEventListener("click", function() {
       setHollowRadius(document.querySelector("#hollowRadius").value);
@@ -1156,6 +1196,16 @@
     });
     document.querySelector("#import").addEventListener("click", function(event) {
       importScene(JSON.parse(document.querySelector("#json").value));
+    });
+    document.querySelector("#startCurves").addEventListener("click", function() {
+      curveMode = true;
+      this.hidden = true;
+      document.querySelector("#stopCurves").hidden = false;
+    });
+    document.querySelector("#stopCurves").addEventListener("click", function() {
+      curveMode = false;
+      this.hidden = true;
+      document.querySelector("#startCurves").hidden = false;
     });
   }
   window.addEventListener("load", onLoad);
