@@ -62,7 +62,8 @@
     chain: "#563b1b",
     goal: "#d2bb69",
     background: "#563b1b",
-    dynamic: "#434d42"
+    dynamic: "#434d42",
+    point: "grey"
   };
   var UIManager = {
     points: [],
@@ -89,7 +90,10 @@
         this.state = this.STATE_START;
       }
       this.points.push(new SAT.Vector(x, y));
-      this.markingPoints.push(drawPoint(x, y));
+      var markingPoint = drawPoint(x, y);
+      markingPoint._x = x;
+      markingPoint._y = y;
+      this.markingPoints.push(markingPoint);
     },
     onMouseUp: function(x, y) {
       if (simulationMode) return;
@@ -108,15 +112,11 @@
       }
       if (this.state === this.STATE_CURVE) {
         if (this.points.length === 4) {
-          var points = [];
-          this.points.forEach(function(point) {
-            points.push([point.x, point.y]);
-          });
-          drawCurve(points);
+          drawCurve(this.markingPoints);
           this.state = this.STATE_IDLE;
           this.markingCircle = null;
+          this.markingPoints.length = 0;
           this.points = [];
-          this._clearMarkingPoints();
         } else if (this.points.length > 4) {
           this.cancelDraw();
           this.state = this.STATE_IDLE;
@@ -353,8 +353,8 @@
     return shape;
   }
   function drawPoint(x, y) {
-    var r = 1;
-    var shape = new ShapeWrapper(strokeAndFill(svg.circle(2 * r).move(mapX(x - r), mapY(y + r), "static")), ShapeWrapper.TYPE_CIRCLE);
+    var r = 8;
+    var shape = new ShapeWrapper(strokeAndFill(svg.circle(2 * r).move(mapX(x - r), mapY(y + r)), "point"), ShapeWrapper.TYPE_CIRCLE);
     shape.x = x;
     shape.y = y;
     return shape;
@@ -499,28 +499,55 @@
     exportChainShapes.push(points.slice());
     updateCode();
   }
-  function drawCurve(points, dummy) {
-    if (points.length !== 4) {
+  function drawCurve(markingPoints, recurse) {
+    if (markingPoints.length !== 4) {
       return;
     }
+    var points = [];
+    markingPoints.forEach(function(point) {
+      points.push([point._x, point._y]);
+    });
     var pathString = "M " + mapX(points[0][0]) + " " + mapY(points[0][1]) + "C";
     for (var i = 1; i < 4; i++) {
       pathString += " " + mapX(points[i][0]) + " " + mapY(points[i][1]);
     }
     var curve = svg.path(pathString).fill("none").stroke({color: defaultColors.chain, width: 2});
-    //var shape = new ShapeWrapper(curve, ShapeWrapper.TYPE_CURVE);
-    //storeShape(shape);
-    //lastShapes.push([shape]);
     var curveLength = curve.node.getTotalLength();
     var chainPoints = [];
     var increment = 10 / curveLength;
-    for (var i = 0; i < 1.0; i += increment) {
+    for (var i = 0; i <= 1.0; i += increment) {
       var point = curve.node.getPointAtLength(curveLength * i);
       chainPoints.push([deMapX(point.x), deMapY(point.y)]);
     }
-    console.log(chainPoints);
     curve.remove();
     drawChainShape(chainPoints);
+    var markingPointsCopy = markingPoints.slice();
+    var lastShapesLastIndex = lastShapes.length - 1;
+    var exportChainShapesLastIndex = exportChainShapes.length - 1;
+    lastShapes[lastShapesLastIndex].push.apply(lastShapes[lastShapesLastIndex], markingPointsCopy);
+    markingPointsCopy.forEach(function(point) {
+      point._lastShapesLastIndex = lastShapesLastIndex;
+      point._exportChainShapesLastIndex = exportChainShapesLastIndex;
+    });
+    !recurse && markingPointsCopy.forEach(function(point) {
+      point.shape.draggable(function(x, y) {
+        lastShapes[point._lastShapesLastIndex].forEach(function(shape, index) {
+          if (index < lastShapes[point._lastShapesLastIndex].length - 4) {
+            removeShape(shape);
+          }
+        });
+        lastShapes.splice(point._lastShapesLastIndex, 1);
+        exportChainShapes.splice(point._exportChainShapesLastIndex, 1);
+        point._x = deMapX(x);
+        point._y = deMapY(y);
+        drawCurve(markingPointsCopy, true);
+        updateCode();
+        return true;
+      });
+      point.shape.mousedown(function() {
+        UIManager.cancelDraw();
+      });
+    });
   }
   function checkOverlaps(shape, x, y) {
     function checkOverlap(aShape) {
