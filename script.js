@@ -21,6 +21,7 @@
   var curveMode = false;
   var gravity = -37;
   var forceX = 130;
+  var pointRadius = 8;
   var oldScrollX = null, oldScrollY  = null;
   function exportScale(n) {
     return n / 30;
@@ -353,8 +354,7 @@
     return shape;
   }
   function drawPoint(x, y) {
-    var r = 8;
-    var shape = new ShapeWrapper(strokeAndFill(svg.circle(2 * r).move(mapX(x - r), mapY(y + r)), "point"), ShapeWrapper.TYPE_CIRCLE);
+    var shape = new ShapeWrapper(strokeAndFill(svg.circle(2 * pointRadius).move(mapX(x - pointRadius), mapY(y + pointRadius)), "point"), ShapeWrapper.TYPE_CIRCLE);
     shape.x = x;
     shape.y = y;
     return shape;
@@ -519,8 +519,8 @@
         });
         lastShapes[point._lastShapesLastIndex] = null;
         exportChainShapes[point._exportChainShapesLastIndex] = null;
-        point._x = deMapX(x);
-        point._y = deMapY(y);
+        point._x = deMapX(x) + pointRadius;
+        point._y = deMapY(y) - pointRadius;
         drawChainShape(markingPointsCopy, true);
         updateCode();
         return true;
@@ -588,8 +588,8 @@
         });
         lastShapes[point._lastShapesLastIndex] = null;
         exportChainShapes[point._exportChainShapesLastIndex] = null;
-        point._x = deMapX(x);
-        point._y = deMapY(y);
+        point._x = deMapX(x) + pointRadius;
+        point._y = deMapY(y) - pointRadius;
         drawCurve(markingPointsCopy, true);
         updateCode();
         return true;
