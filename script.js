@@ -128,13 +128,10 @@
       if (editMode) return;
       if (this.points.length > 1) {
         this.state = this.STATE_IDLE;
-        var points = [];
-        this.points.forEach(function(point) {
-          points.push([point.x, point.y]);
-        });
-        drawChainShape(points);
+        drawChainShape(this.markingPoints);
         this.points = [];
-        this._clearMarkingPoints();
+        this.markingPoints.length = 0;
+        this.markingCircle = null;
       }
     },
     onMouseMove: function(x, y) {
@@ -201,6 +198,9 @@
         }
       });
       exportChainShapes.forEach(function(shape) {
+        if (!shape) {
+          return;
+        }
         for (var i = shape.length - 1; i >= 0; i--) {
           if (shape[i][1] === _y) {
             var line = drawPolygon([[-graphSize / 2, _y], [graphSize / 2, _y]], true);
@@ -335,7 +335,7 @@
         wrapped._phoneBoundary.move(SATShape.pos.x - phoneWidth / 2, SATShape.pos.y - phoneHeight / 2);
       }
       //UIManager.cancelDraw();
-    }
+    };
   }
   function storeShape(shape) {
     shape.shape.mousedown(function() {
@@ -480,7 +480,57 @@
     shapeToSAT[shape.id] = tmpShape;
     return shape;
   }
-  function drawChainShape(points, dummy) {
+  function drawChainShape(markingPoints, recurse, dummy) {
+    if (markingPoints.length === 0) {
+      return;
+    }
+    var lastShapesEntry = [];
+    var points = [];
+    markingPoints.forEach(function(point) {
+      points.push([point._x, point._y]);
+    });
+    var pointA = points[0];
+    for (var i = 1; i < points.length; i++) {
+      var polygon = drawPolygon([pointA.slice(), points[i].slice()], dummy);
+      !dummy && lastShapesEntry.push(polygon);
+      pointA = points[i];
+    }
+    if (dummy) {
+      return;
+    }
+    lastShapesEntry.isLine = true;
+    lastShapes.push(lastShapesEntry);
+    exportChainShapes.push(points.slice());
+    var markingPointsCopy = markingPoints.slice();
+    var lastShapesLastIndex = lastShapes.length - 1;
+    var exportChainShapesLastIndex = exportChainShapes.length - 1;
+    lastShapes[lastShapesLastIndex].push.apply(lastShapes[lastShapesLastIndex], markingPointsCopy);
+    markingPointsCopy.forEach(function(point) {
+      point._lastShapesLastIndex = lastShapesLastIndex;
+      point._exportChainShapesLastIndex = exportChainShapesLastIndex;
+    });
+    updateCode();
+    !recurse && markingPointsCopy.forEach(function(point) {
+      point.shape.draggable(function(x, y) {
+        lastShapes[point._lastShapesLastIndex].forEach(function(shape, index) {
+          if (index < lastShapes[point._lastShapesLastIndex].length - markingPointsCopy.length) {
+            removeShape(shape);
+          }
+        });
+        lastShapes[point._lastShapesLastIndex] = null;
+        exportChainShapes[point._exportChainShapesLastIndex] = null;
+        point._x = deMapX(x);
+        point._y = deMapY(y);
+        drawChainShape(markingPointsCopy, true);
+        updateCode();
+        return true;
+      });
+      point.shape.mousedown(function() {
+        UIManager.cancelDraw();
+      });
+    });
+  }
+  function drawChainShape2(points, dummy) {
     if (points.length === 0) {
       return;
     }
@@ -520,7 +570,7 @@
       chainPoints.push([deMapX(point.x), deMapY(point.y)]);
     }
     curve.remove();
-    drawChainShape(chainPoints);
+    drawChainShape2(chainPoints);
     var markingPointsCopy = markingPoints.slice();
     var lastShapesLastIndex = lastShapes.length - 1;
     var exportChainShapesLastIndex = exportChainShapes.length - 1;
@@ -536,8 +586,8 @@
             removeShape(shape);
           }
         });
-        lastShapes.splice(point._lastShapesLastIndex, 1);
-        exportChainShapes.splice(point._exportChainShapesLastIndex, 1);
+        lastShapes[point._lastShapesLastIndex] = null;
+        exportChainShapes[point._exportChainShapesLastIndex] = null;
         point._x = deMapX(x);
         point._y = deMapY(y);
         drawCurve(markingPointsCopy, true);
@@ -611,8 +661,13 @@
     }
     if (!lastShapes[lastShapes.length - 1]) {
       lastShapes.pop();
+      undo();
+      return;
     }
     if (lastShapes[lastShapes.length - 1].isLine) {
+      while (exportChainShapes.length > 0 && !exportChainShapes[exportChainShapes.length - 1]) {
+        exportChainShapes.pop();
+      }
       exportChainShapes.pop();
     }
     lastShapes[lastShapes.length - 1].forEach(function(shape) {
@@ -664,6 +719,9 @@
       }
     });
     exportChainShapes.forEach(function(chainShape) {
+      if (!chainShape) {
+        return;
+      }
       scene.push({
         type: "chain",
         nature: "static",
