@@ -796,6 +796,11 @@
           break;
       }
     }
+    ["protagonist-color", "hollow-color", "background-color", "dynamic-color",
+    "static-color", "chain-color", "goal-color"].forEach(function(id) {
+      var el = document.querySelector("#" + id);
+      el.value = defaultColors[el.dataset.type];
+    });
   }
   function gen_color(hex) {
     function hexToRgb(hex) {
@@ -920,8 +925,8 @@
   }
   function updateCode() {
     var jsonObj = exportScene();
-    document.querySelector("#json").innerHTML = JSON.stringify(jsonObj);
-    document.querySelector("#java").innerHTML = gen_code(jsonObj);
+    document.querySelector("#json").value = JSON.stringify(jsonObj);
+    document.querySelector("#java").value = gen_code(jsonObj);
   }
   function createBox2dEnv() {
     function createBox2dHollow(obj) {
