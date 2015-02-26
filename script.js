@@ -35,24 +35,24 @@
   var defaultPhysicsValues = {
     circle: {
       friction: 0.2,
-      restitution: 0,
+      restitution: 0.0,
       angularDamping: 2.2,
       density: 1.0
     },
     protagonist: {
       friction: 0.2,
-      restitution: 0,
+      restitution: 0.0,
       angularDamping: 2.2,
-      density: 1
+      density: 1.0
     },
     hollow: {
-      friction: 3,
+      friction: 3.0,
       restitution: 0,
       density: 1.0
     },
     chain: {
-      friction: 3,
-      restitution: 0,
+      friction: 3.0,
+      restitution: 0.0,
       density: 1.0
     }
   };
@@ -783,31 +783,48 @@
           nextNature(shape, x, y);
           break;
         case "hollow":
+          document.querySelector("#hollowRadius").value = importScale(obj.radius);
           drawHollow(importScale(obj.radius));
           break;
         case "chain":
           drawChainShape(obj.points.map(function(point) {
-            return [importScale(point[0]), importScale(point[1])];
+            var markingPoint = drawPoint(importScale(point[0]), importScale(point[1]));
+            markingPoint._x = importScale(point[0]);
+            markingPoint._y = importScale(point[1]);
+            return markingPoint;
           }));
           break;
       }
     }
   }
-  var typeToColor = {
-    circle: "0.13f ,0.62f, 0.20f, 1.0f",
-    goal: "0.16f, 0.53f, 0.78f, 1.0f",
-    protagonist: "0.16f, 0.50f, 0.19f, 1.0f",
-    hollow: "0.44f, 0.87f, 0.52f, 1.0f",
-    chain: "0.13f ,0.62f, 0.20f, 1.0f"
-  };
+  function gen_color(hex) {
+    function hexToRgb(hex) {
+      var result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+      return result ? {
+        r: parseInt(result[1], 16) / 255,
+        g: parseInt(result[2], 16) / 255,
+        b: parseInt(result[3], 16) / 255
+      } : null;
+    }
+    var color = "new Color(";
+    var components = hexToRgb(hex);
+    color += components.r + "f, ";
+    color += components.g + "f, ";
+    color += components.b + "f, ";
+    color += "1.0f)";
+    return color;
+  }
   function gen_goal_code(obj) {
     var code = "world.goal = new GameCircle(world.getWorld(), ";
     code += (obj.nature === "dynamic" ? "BodyDef.BodyType.DynamicBody" : "BodyDef.BodyType.StaticBody");
     ["radius", "x", "y"].forEach(function(prop) {
       code += ", " + obj[prop] + "f";
     });
+    ["friction", "restitution", "density", "angularDamping"].forEach(function(prop) {
+      code += ", " + defaultPhysicsValues.circle[prop] + "f";
+    });
     code += ", ";
-    code += "new Color(" + typeToColor.goal + ")";
+    code += gen_color(defaultColors.goal);
     code += ");\n";
     code += "world.goal.body.setUserData(\"goal\");\n";
     code += "world.bodies.add(world.goal);\n";
@@ -819,8 +836,11 @@
     ["radius", "x", "y"].forEach(function(prop) {
       code += ", " + obj[prop] + "f";
     });
+    ["friction", "restitution", "density", "angularDamping"].forEach(function(prop) {
+      code += ", " + defaultPhysicsValues.protagonist[prop] + "f";
+    });
     code += ", ";
-    code += "new Color(" + typeToColor.protagonist + ")";
+    code += gen_color(defaultColors.protagonist);
     code += ");\n";
     code += "world.protagonist.body.setUserData(\"false\");\n";
     code += "world.bodies.add(world.protagonist);\n";
@@ -832,8 +852,11 @@
     ["radius", "x", "y"].forEach(function(prop) {
       code += ", " + obj[prop] + "f";
     });
+    ["friction", "restitution", "density", "angularDamping"].forEach(function(prop) {
+      code += ", " + defaultPhysicsValues.circle[prop] + "f";
+    });
     code += ", ";
-    code += "new Color(" + typeToColor.circle + ")";
+    code += gen_color(defaultColors[obj.nature]);
     code += "));\n";
     return code;
   }
@@ -842,24 +865,34 @@
     ["radius", "x", "y"].forEach(function(prop) {
       code += ", " + obj[prop] + "f";
     });
+    ["friction", "restitution"].forEach(function(prop) {
+      code += ", " + defaultPhysicsValues.hollow[prop] + "f";
+    });
     code += ", ";
-    code += "new Color(" + typeToColor.hollow + ")";
+    code += gen_color(defaultColors.hollow);
     code += ");\n";
-    code += "world.bodies.add(world.hollow);\n";
+    code += "world.bodies.add(0, world.hollow);\n";
     return code;
   }
   function gen_chain_code(obj) {
-    var code = "world.bodies.add(new GameChain(world.getWorld(), new Vector2[]{";
+    var code = "world.bodies.add(new GameChain(world.getWorld(), new Vector2[] {";
     for (var i = 0; i < obj.points.length - 1; i++) {
-      code += "new Vector2(" + obj.points[i][0] + "f, " + obj.points[i][1] + "f), "
+      code += "new Vector2(" + obj.points[i][0] + "f, " + obj.points[i][1] + "f), ";
     }
-    code += "new Vector2(" + obj.points[i][0] + "f, " + obj.points[i][1] + "f)";
-    code += "}, new Color(" + typeToColor.chain + ")";
+    code += "new Vector2(" + obj.points[i][0] + "f, " + obj.points[i][1] + "f)} ";
+    ["friction", "restitution"].forEach(function(prop) {
+      code += ", " + defaultPhysicsValues.chain[prop] + "f";
+    });
+    code += ", " + gen_color(defaultColors.chain);
     code += "));\n";
     return code;
   }
   function gen_code(scene) {
     var code = "";
+    code += "world.gameMenu.bgColor = " + gen_color(defaultColors.background) + ";\n";
+    code += "world.pauseMenu.bgColor = " + gen_color(defaultColors.background) + ";\n";
+    code += "world.mainMenu.bgColor = " + gen_color(defaultColors.background) + ";\n";
+    code += "world.levelDoneMenu.bgColor = " + gen_color(defaultColors.background) + ";\n";
     var colors = scene.colors;
     var physicsValues = scene.physicsValues;
     scene = scene.scene;
