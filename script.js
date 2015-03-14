@@ -292,6 +292,12 @@
   }
   function RevoluteJoint(shape1, point, shape2) {
     Joint.call(this, shape1, point, shape2, null, jointManager.JOINT_REVOLUTE);
+    this.motorSpeed = 0;
+    this.enableMotor = false;
+    this.enableLimit = false;
+    this.maxMotorTorque = 0;
+    this.lowerAngle = 0;
+    this.upperAngle = 0;
   }
   var jointManager = {
     JOINT_NONE: 0,
@@ -653,6 +659,14 @@
         input.value = joint[input.dataset.var];
         input.addEventListener("keyup", configureJoint["update" + input.dataset.var]);
       });
+    case jointManager.JOINT_REVOLUTE:
+      document.body.querySelector("#revolute-joint-config").hidden = false;
+      ["revolute-joint-lower-angle", "revolute-joint-upper-angle", "revolute-joint-max-motor-torque",
+        "revolute-joint-enable-limit", "revolute-joint-motor-speed"].forEach(function (id) {
+        var input = document.body.querySelector("#" + id);
+        input.value = joint[input.dataset.var];
+        input.addEventListener("keyup", configureJoint["update" + input.dataset.var]);
+      });
     }
   }
   configureJoint.updatelength = function(event) {
@@ -664,11 +678,45 @@
   configureJoint.updatedampingRatio = function(event) {
     configureJoint.joint.dampingRatio = parseFloat(this.value);
   };
+  configureJoint.updateupperAngle = function(event) {
+    configureJoint.joint.upperAngle = parseFloat(this.value) / 180 * 3.14;
+  };
+  configureJoint.updatelowerAngle = function(event) {
+    configureJoint.joint.lowerAngle = parseFloat(this.value) / 180 * 3.14;
+  };
+  configureJoint.updatemotorSpeed = function(event) {
+    configureJoint.joint.motorSpeed = parseFloat(this.value);
+    if (configureJoint.joint.motorSpeed !== 0) {
+      configureJoint.joint.enableMotor = true;
+    } else {
+      configureJoint.joint.enableMotor = false;
+    }
+  };
+  configureJoint.updatemaxMotorTorque = function(event) {
+    configureJoint.joint.maxMotorTorque = parseFloat(this.value);
+  };
+  configureJoint.updateenableLimit = function(event) {
+    configureJoint.joint.enableLimit = this.value === "true";
+  };
   configureJoint.reset = function() {
-    ["distance-joint-length", "distance-joint-frequency", "distance-joint-damping-ratio"].forEach(function(id) {
-      var input = document.body.querySelector("#" + id);
-      input.removeEventListener("keyup", configureJoint["update" + input.dataset.var]);
-    });
+    if (!configureJoint.joint) {
+      return;
+    }
+    switch (configureJoint.joint.type) {
+    case jointManager.JOINT_DISTANCE:
+      ["distance-joint-length", "distance-joint-frequency", "distance-joint-damping-ratio"].forEach(function(id) {
+        var input = document.body.querySelector("#" + id);
+        input.removeEventListener("keyup", configureJoint["update" + input.dataset.var]);
+      });
+      break;
+    case jointManager.JOINT_REVOLUTE:
+      ["revolute-joint-lower-angle", "revolute-joint-upper-angle", "revolute-joint-max-motor-torque",
+        "revolute-joint-enable-limit", "revolute-joint-motor-speed"].forEach(function(id) {
+        var input = document.body.querySelector("#" + id);
+        input.removeEventListener("keyup", configureJoint["update" + input.dataset.var]);
+      });
+      break;
+    }
     configureJoint.joint = null;
   };
   function drawChainShape2(points, dummy) {
@@ -1229,6 +1277,9 @@
         break;
       case jointManager.JOINT_REVOLUTE:
         var jointDef = new b2RevoluteJointDef();
+        ["lowerAngle", "upperAngle", "enableLimit", "maxMotorTorque", "motorSpeed", "enableMotor"].forEach(function(prop) {
+          jointDef[prop] = joint[prop];
+        });
         var joint = jointDef.InitializeAndCreate(body1, body2, new b2Vec2(exportScale(joint.point1._x), exportScale(joint.point1._y)));
         return function() {
         };
