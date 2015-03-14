@@ -290,6 +290,9 @@
     this.dampingRatio = 0.5;
     this.frequencyHz = 0;
   }
+  function RevoluteJoint(shape1, point, shape2) {
+    Joint.call(this, shape1, point, shape2, null, jointManager.JOINT_REVOLUTE);
+  }
   var jointManager = {
     JOINT_NONE: 0,
     JOINT_REVOLUTE: 1,
@@ -297,7 +300,7 @@
     jointMode: false,
     count: 0,
     type: this.JOINT_NONE,
-    lastShape: null,
+    lastShapes: [],
     lastPoint: null,
     nextPoint: function(shape, point) {
       if (!this.jointMode) {
@@ -309,12 +312,17 @@
       point = drawPoint(point.x, point.y);
       point._x = x;
       point._y = y;
-      if (this.count === 2) {
-        addJoint(this.lastShape, this.lastPoint, shape, point, this.type);
+      if (this.type === this.JOINT_DISTANCE && this.count === 2) {
+        addJoint([this.lastShapes[0], shape], [this.lastPoint, point], this.type);
         this.count = 0;
+        this.lastShapes.length = 0;
+      } else if (this.type === this.JOINT_REVOLUTE && this.count === 3) {
+        addJoint([this.lastShapes[0], this.lastShapes[1]], [point], this.type);
+        this.count = 0;
+        this.lastShapes.length = 0;
       } else {
         this.lastPoint = point;
-        this.lastShape = shape;
+        this.lastShapes.push(shape);
       }
     }
   };
@@ -402,9 +410,15 @@
     shapes.push(shape);
     return shape;
   }
-  function addJoint(shape1, point1, shape2, point2, type) {
-    var joint = drawJoint(point1, point2, shape1, shape2, type);
-    return joint;
+  function addJoint(shapes, points, type) {
+    switch (type) {
+    case jointManager.JOINT_DISTANCE:
+      return drawDistanceJoint(points[0], points[1], shapes[0], shapes[1]);
+      break;
+    case jointManager.JOINT_REVOLUTE:
+      return drawRevoluteJoint(points[0], shapes[0], shapes[1]);
+      break;
+    }
   }
   function drawPoint(x, y) {
     var shape = new ShapeWrapper(strokeAndFill(svg.circle(2 * pointRadius).move(mapX(x - pointRadius), mapY(y + pointRadius)), "point"), ShapeWrapper.TYPE_CIRCLE);
@@ -585,15 +599,11 @@
       });
     });
   }
-  function drawJoint(markingPoint1, markingPoint2, shape1, shape2, type, recurse) {
+  function drawDistanceJoint(markingPoint1, markingPoint2, shape1, shape2, recurse) {
     var polygon = drawPolygon([[markingPoint1._x, markingPoint1._y], [markingPoint2._x, markingPoint2._y]], true);
     markingPoint1._line = markingPoint2._line = polygon;
     markingPoint1._jointIndex = markingPoint2._jointIndex = joints.length;
-    switch (type) {
-    case jointManager.JOINT_DISTANCE:
-      var joint = new DistanceJoint(shape1, markingPoint1, shape2, markingPoint2, polygon);
-      break;
-    }
+    var joint = new DistanceJoint(shape1, markingPoint1, shape2, markingPoint2, polygon);
     joints.push(joint);
     !recurse && [markingPoint1, markingPoint2].forEach(function(point) {
       point.shape.draggable(function(x, y) {
@@ -601,7 +611,7 @@
         point._x = deMapX(x) + pointRadius;
         point._y = deMapY(y) - pointRadius;
         joints.splice(point._jointIndex, 1);
-        drawJoint(markingPoint1, markingPoint2, shape1, shape2, type, true);
+        drawDistanceJoint(markingPoint1, markingPoint2, shape1, shape2, true);
         updateCode();
         return true;
       });
@@ -610,6 +620,26 @@
         UIManager.cancelDraw();
       });
     });
+    return joint;
+  }
+  function drawRevoluteJoint(markingPoint, shape1, shape2, recurse) {
+    markingPoint._jointIndex = joints.length;
+    var joint = new RevoluteJoint(shape1, markingPoint, shape2);
+    joints.push(joint);
+    if (!recurse) {
+      markingPoint.shape.draggable(function(x, y) {
+        markingPoint._x = deMapX(x) + pointRadius;
+        markingPoint._y = deMapY(y) - pointRadius;
+        joints.splice(markingPoint._jointIndex, 1);
+        drawRevoluteJoint(markingPoint, shape1, shape2, true);
+        updateCode();
+        return true;
+      });
+      markingPoint.shape.mousedown(function() {
+        configureJoint(joint);
+        UIManager.cancelDraw();
+      });
+    };
     return joint;
   }
   function configureJoint(joint) {
@@ -809,7 +839,7 @@
         if ("id" in shape) {
           obj.id = shape.id;
         }
-        switch(shape.nature) {
+        switch (shape.nature) {
         case ShapeWrapper.NATURE_STATIC:
           obj.nature = "static";
           obj.type = "circle";
@@ -1022,7 +1052,7 @@
     scene = scene.scene;
     for (var i = 0; i < scene.length; i++) {
       var obj = scene[i];
-      switch(obj.type) {
+      switch (obj.type) {
       case "circle":
         code += gen_circle_code(obj);
         break;
@@ -1197,6 +1227,12 @@
             mapX(simulateScale(body2.GetPosition().x)), mapY(simulateScale(body2.GetPosition().y))), "chain");
         };
         break;
+      case jointManager.JOINT_REVOLUTE:
+        var jointDef = new b2RevoluteJointDef();
+        var joint = jointDef.InitializeAndCreate(body1, body2, new b2Vec2(exportScale(joint.point1._x), exportScale(joint.point1._y)));
+        return function() {
+        };
+        break;
       }
     }
     var jsonObj = exportScene().scene;
@@ -1287,7 +1323,7 @@
           var shape = method();
           if (shape instanceof Array) {
             simulate.shapes.push.apply(simulate.shapes, shape);
-          } else {
+          } else if (shape) {
             simulate.shapes.push(shape);
           }
         });
