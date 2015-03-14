@@ -23,6 +23,7 @@
   var forceX = 130;
   var pointRadius = 8;
   var oldScrollX = null, oldScrollY  = null;
+  var joints = [];
   function exportScale(n) {
     return n / 30;
   }
@@ -84,6 +85,7 @@
     onMouseDown: function(x, y) {
       if (simulationMode) return;
       if (editMode) return;
+      if (jointManager.jointMode) return;
       if (this.state === this.STATE_CANCELLED) {
         return;
       }
@@ -98,6 +100,7 @@
     },
     onMouseUp: function(x, y) {
       if (simulationMode) return;
+      if (jointManager.jointMode) return;
       if (this.state === this.STATE_CANCELLED) {
         this.cancelDraw();
         this.state = this.STATE_IDLE;
@@ -125,6 +128,7 @@
       }
     },
     onContextMenu: function(x, y) {
+      if (jointManager.jointMode) return;
       if (simulationMode) return;
       if (editMode) return;
       if (this.points.length > 1) {
@@ -136,6 +140,7 @@
       }
     },
     onMouseMove: function(x, y) {
+      if (jointManager.jointMode) return;
       if (simulationMode) return;
       if (showMarkingLines) {
         this._clearMarkingLines();
@@ -260,6 +265,7 @@
   ShapeWrapper.TYPE_CIRCLE = 1;
   ShapeWrapper.TYPE_POLYGON = 2;
   ShapeWrapper.TYPE_CURVE = 3;
+  ShapeWrapper.TYPE_CURVE = 3;
   ShapeWrapper.NATURE_STATIC = 0;
   ShapeWrapper.NATURE_DYNAMIC = 1;
   ShapeWrapper.NATURE_PROTAGONIST = 2;
@@ -270,6 +276,43 @@
   ShapeWrapper.colorMap[ShapeWrapper.NATURE_PROTAGONIST] = "green";
   ShapeWrapper.colorMap[ShapeWrapper.NATURE_GOAL] = "red";
   ShapeWrapper.ID = 0;
+  function Joint(shape1, point1, shape2, point2, line, type) {
+    this.shape1 = shape1;
+    this.shape2 = shape2;
+    this.point1 = point1;
+    this.point2 = point2;
+    this.line = line;
+    this.type = type;
+  }
+  var jointManager = {
+    JOINT_NONE: 0,
+    JOINT_REVOLUTE: 1,
+    JOINT_DISTANCE: 2,
+    jointMode: false,
+    count: 0,
+    type: this.JOINT_NONE,
+    lastShape: null,
+    lastPoint: null,
+    nextPoint: function(shape, point) {
+      if (!this.jointMode) {
+        return;
+      }
+      this.count++;
+      var x = point.x;
+      var y = point.y;
+      point = drawPoint(point.x, point.y);
+      point._x = x;
+      point._y = y;
+      if (this.count === 2) {
+        addJoint(this.lastShape, this.lastPoint, shape, point, this.type);
+        this.count = 0;
+      } else {
+        this.lastPoint = point;
+        this.lastShape = shape;
+      }
+    }
+  };
+  var jointTypes = [jointManager.JOINT_NONE, jointManager.JOINT_REVOLUTE, jointManager.JOINT_DISTANCE];
   function transformCoordinates(event) {
     var div = document.querySelector("#canvasDiv");
     var svg = document.querySelector("svg");
@@ -279,8 +322,8 @@
   function transformCoordinates2(x, y) {
     var div = document.querySelector("#canvasDiv");
     var svg = document.querySelector("svg");
-    return new SAT.Vector((x - svg.offsetLeft + div.scrollLeft - graphSize / 2),
-      (graphSize / 2 - (y - svg.offsetTop + div.scrollTop)));
+    return new SAT.Vector((document.body.scrollLeft + x - svg.offsetLeft + div.scrollLeft - graphSize / 2),
+      (graphSize / 2 - (document.body.scrollTop + y - svg.offsetTop + div.scrollTop)));
   }
   function createSVG() {
     svg = SVG('canvasDiv').size(graphSize, graphSize);
@@ -326,7 +369,7 @@
   }
   function makeDraggable(wrapped) {
     wrapped.shape.draggable(function(x, y) {
-      return !editMode && checkOverlaps(wrapped, x, y);
+      return !editMode && !jointManager.jointMode && checkOverlaps(wrapped, x, y);
     });
     wrapped.shape.dragmove = function(delta, event) {
       redrawAxes();
@@ -352,6 +395,10 @@
     });*/
     shapes.push(shape);
     return shape;
+  }
+  function addJoint(shape1, point1, shape2, point2, type) {
+    var joint = drawJoint(point1, point2, shape1, shape2, type);
+    return joint;
   }
   function drawPoint(x, y) {
     var shape = new ShapeWrapper(strokeAndFill(svg.circle(2 * pointRadius).move(mapX(x - pointRadius), mapY(y + pointRadius)), "point"), ShapeWrapper.TYPE_CIRCLE);
@@ -428,6 +475,9 @@
       }
       nextNature(shape, x, y);
     });
+    shape.shape.click(function(event) {
+      jointManager.nextPoint(shape, transformCoordinates2(event.x, event.y));
+    });
     makeDraggable(shape);
     lastShapes.push([shape]);
     shape.lastShapeIndex = lastShapes.length - 1;
@@ -495,12 +545,11 @@
       !dummy && lastShapesEntry.push(polygon);
       pointA = points[i];
     }
-    if (dummy) {
-      return;
+    if (!dummy) {
+      lastShapesEntry.isLine = true;
+      lastShapes.push(lastShapesEntry);
+      exportChainShapes.push(points.slice());
     }
-    lastShapesEntry.isLine = true;
-    lastShapes.push(lastShapesEntry);
-    exportChainShapes.push(points.slice());
     var markingPointsCopy = markingPoints.slice();
     var lastShapesLastIndex = lastShapes.length - 1;
     var exportChainShapesLastIndex = exportChainShapes.length - 1;
@@ -529,6 +578,28 @@
         UIManager.cancelDraw();
       });
     });
+  }
+  function drawJoint(markingPoint1, markingPoint2, shape1, shape2, type, recurse) {
+    var polygon = drawPolygon([[markingPoint1._x, markingPoint1._y], [markingPoint2._x, markingPoint2._y]], true);
+    markingPoint1._line = markingPoint2._line = polygon;
+    markingPoint1._jointIndex = markingPoint2._jointIndex = joints.length;
+    var joint = new Joint(shape1, markingPoint1, shape2, markingPoint2, polygon);
+    joints.push(joint);
+    !recurse && [markingPoint1, markingPoint2].forEach(function(point) {
+      point.shape.draggable(function(x, y) {
+        removeShape(point._line);
+        point._x = deMapX(x) + pointRadius;
+        point._y = deMapY(y) - pointRadius;
+        joints.splice(point._jointIndex, 1);
+        drawJoint(markingPoint1, markingPoint2, shape1, shape2, type, true);
+        updateCode();
+        return true;
+      });
+      point.shape.mousedown(function() {
+        UIManager.cancelDraw();
+      });
+    });
+    return joint;
   }
   function drawChainShape2(points, dummy) {
     if (points.length === 0) {
@@ -695,6 +766,9 @@
           x: exportScale(deMapX(SATShape.pos.x)),
           y: exportScale(deMapY(SATShape.pos.y))
         };
+        if ("id" in shape) {
+          obj.id = shape.id;
+        }
         switch(shape.nature) {
         case ShapeWrapper.NATURE_STATIC:
           obj.nature = "static";
@@ -746,6 +820,7 @@
     hollow = null;
     exportChainShapes.length = 0;
     lastShapes.length = 0;
+    ShapeWrapper.ID = 0;
   }
   function importScene(json) {
     if (simulationMode) {
@@ -763,6 +838,7 @@
           var x = importScale(obj.x);
           var y = importScale(obj.y);
           var shape = drawCircle(x, y, importScale(obj.radius));
+          shape.id2 = obj.id;
           if (obj.nature === "dynamic") {
             nextNature(shape, x, y);
           }
@@ -771,6 +847,7 @@
           var x = importScale(obj.x);
           var y = importScale(obj.y);
           var shape = drawCircle(x, y, importScale(obj.radius));
+          shape.id2 = obj.id;
           nextNature(shape, x, y);
           nextNature(shape, x, y);
           break;
@@ -778,6 +855,7 @@
           var x = importScale(obj.x);
           var y = importScale(obj.y);
           var shape = drawCircle(x, y, importScale(obj.radius));
+          shape.id2 = obj.id;
           nextNature(shape, x, y);
           nextNature(shape, x, y);
           nextNature(shape, x, y);
@@ -801,6 +879,7 @@
       var el = document.querySelector("#" + id);
       el.value = defaultColors[el.dataset.type];
     });
+    updateCode();
   }
   function gen_color(hex) {
     function hexToRgb(hex) {
@@ -929,6 +1008,7 @@
     document.querySelector("#java").value = gen_code(jsonObj);
   }
   function createBox2dEnv() {
+    var bodyMap = {};
     function createBox2dHollow(obj) {
       var radius = obj.radius;
       var scale = 20;
@@ -989,6 +1069,7 @@
       fixtureDef.angularDamping = angularDamping;
       // body.CreateFixture(fixtureDef);
       body.CreateFixtureFromDef(fixtureDef);
+      bodyMap[obj.id] = body;
       if (obj.type === "protagonist") {
         world._protagonist = body;
       }
@@ -1057,6 +1138,27 @@
         return shapes;
       };
     }
+    function createBox2dJoint(joint) {
+      var body1 = bodyMap[joint.shape1.id];
+      var body2 = bodyMap[joint.shape2.id];
+      switch (joint.type) {
+        case Joint.JOINT_DISTANCE:
+        var jointDef = new b2DistanceJointDef();
+        jointDef.bodyA = body1;
+        jointDef.bodyB = body2;
+        jointDef.localAnchorA = new b2Vec2(0, 0);
+        jointDef.localAnchorB = new b2Vec2(0, 0);
+        jointDef.length = 3;
+        jointDef.collideConnected = true;
+        jointDef.frequencyHz = 1.4;
+        world.CreateJoint(jointDef);
+        return function() {
+          return strokeAndFill(svg.line(mapX(simulateScale(body1.GetPosition().x)), mapY(simulateScale(body1.GetPosition().y)),
+            mapX(simulateScale(body2.GetPosition().x)), mapY(simulateScale(body2.GetPosition().y))), "chain");
+        };
+        break;
+      }
+    }
     var jsonObj = exportScene().scene;
     var world = new b2World(new b2Vec2(0.0, gravity));
     window.world = world;
@@ -1079,6 +1181,9 @@
           world.renderMethods.push(createBox2dChain(obj));
           break;
       }
+    }
+    for (var i = 0; i < joints.length; i++) {
+      world.renderMethods.push(createBox2dJoint(joints[i]));
     }
     if (protagonistMethod) {
       world.renderMethods.push(protagonistMethod);
@@ -1329,6 +1434,10 @@
       curveMode = false;
       this.hidden = true;
       document.querySelector("#startCurves").hidden = false;
+    });
+    document.querySelector("#joints").addEventListener("change", function() {
+      jointManager.jointMode = (this.value !== "none");
+      jointManager.type = jointTypes[this.selectedIndex];
     });
   }
   window.addEventListener("load", onLoad);
