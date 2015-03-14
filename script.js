@@ -276,13 +276,19 @@
   ShapeWrapper.colorMap[ShapeWrapper.NATURE_PROTAGONIST] = "green";
   ShapeWrapper.colorMap[ShapeWrapper.NATURE_GOAL] = "red";
   ShapeWrapper.ID = 0;
-  function Joint(shape1, point1, shape2, point2, line, type) {
+  function Joint(shape1, point1, shape2, point2, type) {
     this.shape1 = shape1;
     this.shape2 = shape2;
     this.point1 = point1;
     this.point2 = point2;
-    this.line = line;
     this.type = type;
+  }
+  function DistanceJoint(shape1, point1, shape2, point2, line) {
+    Joint.call(this, shape1, point1, shape2, point2, jointManager.JOINT_DISTANCE);
+    this.line = line;
+    this.length = 3;
+    this.dampingRatio = 0.5;
+    this.frequencyHz = 0;
   }
   var jointManager = {
     JOINT_NONE: 0,
@@ -583,7 +589,11 @@
     var polygon = drawPolygon([[markingPoint1._x, markingPoint1._y], [markingPoint2._x, markingPoint2._y]], true);
     markingPoint1._line = markingPoint2._line = polygon;
     markingPoint1._jointIndex = markingPoint2._jointIndex = joints.length;
-    var joint = new Joint(shape1, markingPoint1, shape2, markingPoint2, polygon);
+    switch (type) {
+    case jointManager.JOINT_DISTANCE:
+      var joint = new DistanceJoint(shape1, markingPoint1, shape2, markingPoint2, polygon);
+      break;
+    }
     joints.push(joint);
     !recurse && [markingPoint1, markingPoint2].forEach(function(point) {
       point.shape.draggable(function(x, y) {
@@ -596,11 +606,41 @@
         return true;
       });
       point.shape.mousedown(function() {
+        configureJoint(joint);
         UIManager.cancelDraw();
       });
     });
     return joint;
   }
+  function configureJoint(joint) {
+    configureJoint.reset();
+    configureJoint.joint = joint;
+    switch (joint.type) {
+    case jointManager.JOINT_DISTANCE:
+      document.body.querySelector("#distance-joint-config").hidden = false;
+      ["distance-joint-length", "distance-joint-frequency", "distance-joint-damping-ratio"].forEach(function (id) {
+        var input = document.body.querySelector("#" + id);
+        input.value = joint[input.dataset.var];
+        input.addEventListener("keyup", configureJoint["update" + input.dataset.var]);
+      });
+    }
+  }
+  configureJoint.updatelength = function(event) {
+    configureJoint.joint.length = parseFloat(this.value);
+  };
+  configureJoint.updatefrequencyHz = function(event) {
+    configureJoint.joint.frequencyHz = parseFloat(this.value);
+  };
+  configureJoint.updatedampingRatio = function(event) {
+    configureJoint.joint.dampingRatio = parseFloat(this.value);
+  };
+  configureJoint.reset = function() {
+    ["distance-joint-length", "distance-joint-frequency", "distance-joint-damping-ratio"].forEach(function(id) {
+      var input = document.body.querySelector("#" + id);
+      input.removeEventListener("keyup", configureJoint["update" + input.dataset.var]);
+    });
+    configureJoint.joint = null;
+  };
   function drawChainShape2(points, dummy) {
     if (points.length === 0) {
       return;
@@ -834,44 +874,44 @@
     for (var i = 0; i < scene.length; i++) {
       var obj = scene[i];
       switch (obj.type) {
-        case "circle":
-          var x = importScale(obj.x);
-          var y = importScale(obj.y);
-          var shape = drawCircle(x, y, importScale(obj.radius));
-          shape.id2 = obj.id;
-          if (obj.nature === "dynamic") {
-            nextNature(shape, x, y);
-          }
-          break;
-        case "protagonist":
-          var x = importScale(obj.x);
-          var y = importScale(obj.y);
-          var shape = drawCircle(x, y, importScale(obj.radius));
-          shape.id2 = obj.id;
+      case "circle":
+        var x = importScale(obj.x);
+        var y = importScale(obj.y);
+        var shape = drawCircle(x, y, importScale(obj.radius));
+        shape.id2 = obj.id;
+        if (obj.nature === "dynamic") {
           nextNature(shape, x, y);
-          nextNature(shape, x, y);
-          break;
-        case "goal":
-          var x = importScale(obj.x);
-          var y = importScale(obj.y);
-          var shape = drawCircle(x, y, importScale(obj.radius));
-          shape.id2 = obj.id;
-          nextNature(shape, x, y);
-          nextNature(shape, x, y);
-          nextNature(shape, x, y);
-          break;
-        case "hollow":
-          document.querySelector("#hollowRadius").value = importScale(obj.radius);
-          drawHollow(importScale(obj.radius));
-          break;
-        case "chain":
-          drawChainShape(obj.points.map(function(point) {
-            var markingPoint = drawPoint(importScale(point[0]), importScale(point[1]));
-            markingPoint._x = importScale(point[0]);
-            markingPoint._y = importScale(point[1]);
-            return markingPoint;
-          }));
-          break;
+        }
+        break;
+      case "protagonist":
+        var x = importScale(obj.x);
+        var y = importScale(obj.y);
+        var shape = drawCircle(x, y, importScale(obj.radius));
+        shape.id2 = obj.id;
+        nextNature(shape, x, y);
+        nextNature(shape, x, y);
+        break;
+      case "goal":
+        var x = importScale(obj.x);
+        var y = importScale(obj.y);
+        var shape = drawCircle(x, y, importScale(obj.radius));
+        shape.id2 = obj.id;
+        nextNature(shape, x, y);
+        nextNature(shape, x, y);
+        nextNature(shape, x, y);
+        break;
+      case "hollow":
+        document.querySelector("#hollowRadius").value = importScale(obj.radius);
+        drawHollow(importScale(obj.radius));
+        break;
+      case "chain":
+        drawChainShape(obj.points.map(function(point) {
+          var markingPoint = drawPoint(importScale(point[0]), importScale(point[1]));
+          markingPoint._x = importScale(point[0]);
+          markingPoint._y = importScale(point[1]);
+          return markingPoint;
+        }));
+        break;
       }
     }
     ["protagonist-color", "hollow-color", "background-color", "dynamic-color",
@@ -983,21 +1023,21 @@
     for (var i = 0; i < scene.length; i++) {
       var obj = scene[i];
       switch(obj.type) {
-        case "circle":
-          code += gen_circle_code(obj);
-          break;
-        case "hollow":
-          code += gen_hollow_code(obj);
-          break;
-        case "goal":
-          code += gen_goal_code(obj);
-          break;
-        case "protagonist":
-          code += gen_protagonist_code(obj);
-          break;
-        case "chain":
-          code += gen_chain_code(obj);
-          break;
+      case "circle":
+        code += gen_circle_code(obj);
+        break;
+      case "hollow":
+        code += gen_hollow_code(obj);
+        break;
+      case "goal":
+        code += gen_goal_code(obj);
+        break;
+      case "protagonist":
+        code += gen_protagonist_code(obj);
+        break;
+      case "chain":
+        code += gen_chain_code(obj);
+        break;
       }
     }
     return code;
@@ -1142,15 +1182,15 @@
       var body1 = bodyMap[joint.shape1.id];
       var body2 = bodyMap[joint.shape2.id];
       switch (joint.type) {
-        case Joint.JOINT_DISTANCE:
+      case jointManager.JOINT_DISTANCE:
         var jointDef = new b2DistanceJointDef();
         jointDef.bodyA = body1;
         jointDef.bodyB = body2;
         jointDef.localAnchorA = new b2Vec2(0, 0);
         jointDef.localAnchorB = new b2Vec2(0, 0);
-        jointDef.length = 3;
+        jointDef.length = joint.length;
         jointDef.collideConnected = true;
-        jointDef.frequencyHz = 1.4;
+        jointDef.frequencyHz = joint.frequencyHz;
         world.CreateJoint(jointDef);
         return function() {
           return strokeAndFill(svg.line(mapX(simulateScale(body1.GetPosition().x)), mapY(simulateScale(body1.GetPosition().y)),
