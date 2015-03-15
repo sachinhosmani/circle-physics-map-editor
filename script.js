@@ -308,6 +308,13 @@
     type: this.JOINT_NONE,
     lastShapes: [],
     lastPoint: null,
+    _colorPoints: function(points, color) {
+      points.forEach(function(point) {
+        if (point) {
+          point.shape.attr({fill: color});
+        }
+      });
+    },
     nextPoint: function(shape, point) {
       if (!this.jointMode) {
         return;
@@ -316,13 +323,16 @@
       var x = point.x;
       var y = point.y;
       point = drawPoint(point.x, point.y);
+      this._colorPoints([point], "maroon");
       point._x = x;
       point._y = y;
       if (this.type === this.JOINT_DISTANCE && this.count === 2) {
+        this._colorPoints([this.lastPoint, point], "purple");
         addJoint([this.lastShapes[0], shape], [this.lastPoint, point], this.type);
         this.count = 0;
         this.lastShapes.length = 0;
       } else if (this.type === this.JOINT_REVOLUTE && this.count === 3) {
+        this._colorPoints([point], "cyan");
         addJoint([this.lastShapes[0], this.lastShapes[1]], [point], this.type);
         this.count = 0;
         this.lastShapes.length = 0;
@@ -679,10 +689,10 @@
     configureJoint.joint.dampingRatio = parseFloat(this.value);
   };
   configureJoint.updateupperAngle = function(event) {
-    configureJoint.joint.upperAngle = parseFloat(this.value) / 180 * 3.14;
+    configureJoint.joint.upperAngle = parseFloat(this.value) / 180 * Math.PI;
   };
   configureJoint.updatelowerAngle = function(event) {
-    configureJoint.joint.lowerAngle = parseFloat(this.value) / 180 * 3.14;
+    configureJoint.joint.lowerAngle = parseFloat(this.value) / 180 * Math.PI;
   };
   configureJoint.updatemotorSpeed = function(event) {
     configureJoint.joint.motorSpeed = parseFloat(this.value);
