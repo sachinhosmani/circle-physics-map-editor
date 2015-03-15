@@ -323,6 +323,7 @@
       var x = point.x;
       var y = point.y;
       point = drawPoint(point.x, point.y);
+      point._lastPoint = this.lastPoint;
       this._colorPoints([point], "maroon");
       point._x = x;
       point._y = y;
@@ -331,15 +332,37 @@
         addJoint([this.lastShapes[0], shape], [this.lastPoint, point], this.type);
         this.count = 0;
         this.lastShapes.length = 0;
+        var self = this;
+        point.shape.dblclick(function() {
+          joints[point._jointIndex].line.shape.remove();
+          self._removeJoint(point);
+        });
+        this.lastPoint.shape.dblclick(function() {
+          joints[point._jointIndex].line.shape.remove();
+          self._removeJoint(point);
+        });
       } else if (this.type === this.JOINT_REVOLUTE && this.count === 3) {
         this._colorPoints([point], "cyan");
         addJoint([this.lastShapes[0], this.lastShapes[1]], [point], this.type);
         this.count = 0;
         this.lastShapes.length = 0;
+        var self = this;
+        point.shape.dblclick(function() {
+          self._removeJoint(point);
+        });
       } else {
         this.lastPoint = point;
         this.lastShapes.push(shape);
       }
+    },
+    _removeJoint: function(point) {
+      joints[point._jointIndex] = null;
+      point.shape.remove();
+      while (point._lastPoint) {
+        point._lastPoint.shape.remove();
+        point = point._lastPoint;
+      }
+      configureJoint.reset();
     }
   };
   var jointTypes = [jointManager.JOINT_NONE, jointManager.JOINT_REVOLUTE, jointManager.JOINT_DISTANCE];
@@ -626,7 +649,7 @@
         removeShape(point._line);
         point._x = deMapX(x) + pointRadius;
         point._y = deMapY(y) - pointRadius;
-        joints.splice(point._jointIndex, 1);
+        joints[point._jointIndex] = null;
         drawDistanceJoint(markingPoint1, markingPoint2, shape1, shape2, true);
         updateCode();
         return true;
@@ -646,7 +669,7 @@
       markingPoint.shape.draggable(function(x, y) {
         markingPoint._x = deMapX(x) + pointRadius;
         markingPoint._y = deMapY(y) - pointRadius;
-        joints.splice(markingPoint._jointIndex, 1);
+        joints[markingPoint._jointIndex] = null;
         drawRevoluteJoint(markingPoint, shape1, shape2, true);
         updateCode();
         return true;
@@ -664,19 +687,23 @@
     switch (joint.type) {
     case jointManager.JOINT_DISTANCE:
       document.body.querySelector("#distance-joint-config").hidden = false;
+      document.body.querySelector("#revolute-joint-config").hidden = true;
       ["distance-joint-length", "distance-joint-frequency", "distance-joint-damping-ratio"].forEach(function (id) {
         var input = document.body.querySelector("#" + id);
         input.value = joint[input.dataset.var];
         input.addEventListener("keyup", configureJoint["update" + input.dataset.var]);
       });
+      break;
     case jointManager.JOINT_REVOLUTE:
       document.body.querySelector("#revolute-joint-config").hidden = false;
+      document.body.querySelector("#distance-joint-config").hidden = true;
       ["revolute-joint-lower-angle", "revolute-joint-upper-angle", "revolute-joint-max-motor-torque",
         "revolute-joint-enable-limit", "revolute-joint-motor-speed"].forEach(function (id) {
         var input = document.body.querySelector("#" + id);
         input.value = joint[input.dataset.var];
         input.addEventListener("keyup", configureJoint["update" + input.dataset.var]);
       });
+      break;
     }
   }
   configureJoint.updatelength = function(event) {
@@ -728,6 +755,8 @@
       break;
     }
     configureJoint.joint = null;
+    document.body.querySelector("#distance-joint-config").hidden = true;
+    document.body.querySelector("#revolute-joint-config").hidden = true;
   };
   function drawChainShape2(points, dummy) {
     if (points.length === 0) {
@@ -1320,7 +1349,9 @@
       }
     }
     for (var i = 0; i < joints.length; i++) {
-      world.renderMethods.push(createBox2dJoint(joints[i]));
+      if (joints[i]) {
+        world.renderMethods.push(createBox2dJoint(joints[i]));
+      }
     }
     if (protagonistMethod) {
       world.renderMethods.push(protagonistMethod);
