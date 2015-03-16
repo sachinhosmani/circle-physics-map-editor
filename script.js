@@ -289,6 +289,7 @@
     this.length = 3;
     this.dampingRatio = 0.5;
     this.frequencyHz = 0;
+    this.collideConnected = true;
   }
   function RevoluteJoint(shape1, point, shape2) {
     Joint.call(this, shape1, point, shape2, null, jointManager.JOINT_REVOLUTE);
@@ -298,6 +299,7 @@
     this.maxMotorTorque = 0;
     this.lowerAngle = 0;
     this.upperAngle = 0;
+    this.collideConnected = false;
   }
   var jointManager = {
     JOINT_NONE: 0,
@@ -382,8 +384,8 @@
     svg = SVG('canvasDiv').size(graphSize, graphSize);
     document.querySelector("svg").addEventListener("mousemove", function(event) {
       var coords = transformCoordinates(event);
-      coordinateBar.innerHTML = coords.x +
-        ", " + coords.y;
+      coordinateBar.innerHTML = Math.floor(coords.x) +
+        ", " + Math.floor(coords.y);
     });
     background = strokeAndFill(svg.rect(graphSize, graphSize).
       move(0, 0), "background");
@@ -452,10 +454,14 @@
   function addJoint(shapes, points, type) {
     switch (type) {
     case jointManager.JOINT_DISTANCE:
-      return drawDistanceJoint(points[0], points[1], shapes[0], shapes[1]);
+      var joint = drawDistanceJoint(points[0], points[1], shapes[0], shapes[1]);
+      updateCode();
+      return joint;
       break;
     case jointManager.JOINT_REVOLUTE:
-      return drawRevoluteJoint(points[0], shapes[0], shapes[1]);
+      var joint = drawRevoluteJoint(points[0], shapes[0], shapes[1]);
+      updateCode();
+      return joint;
       break;
     }
   }
@@ -957,14 +963,47 @@
         type: "chain",
         nature: "static",
         points: chainShape.map(function(point) {
-          return [exportScale(point[0]), exportScale(point[1])]
+          return [exportScale(point[0]), exportScale(point[1])];
         })
       });
+    });
+    jointJSON = [];
+    joints.forEach(function(joint) {
+      switch (joint.type) {
+      case jointManager.JOINT_DISTANCE:
+        jointJSON.push({
+          type: "distance",
+          length: joint.length,
+          dampingRatio: joint.dampingRatio,
+          frequencyHz: joint.frequencyHz,
+          collideConnected: joint.collideConnected,
+          body1: joint.shape1.id,
+          body2: joint.shape2.id
+        });
+        break;
+      case jointManager.JOINT_REVOLUTE:
+        jointJSON.push({
+          type: "revolute",
+          motorSpeed: joint.motorSpeed,
+          enableMotor: joint.enableMotor,
+          enableLimit: joint.enableLimit,
+          maxMotorTorque: joint.maxMotorTorque,
+          lowerAngle: joint.lowerAngle,
+          upperAngle: joint.upperAngle,
+          collideConnected: joint.collideConnected,
+          body1: joint.shape1.id,
+          body2: joint.shape2.id,
+          x: exportScale(joint.point1._x),
+          y: exportScale(joint.point1._y)
+        });
+        break;
+      }
     });
     return {
       scene: scene,
       physicsValues: defaultPhysicsValues,
-      colors: defaultColors
+      colors: defaultColors,
+      joints: jointJSON
     };
   }
   function destroyAll() {
@@ -1056,7 +1095,8 @@
     return color;
   }
   function gen_goal_code(obj) {
-    var code = "world.goal = new GameCircle(world.getWorld(), ";
+    var name = "tmp" + gen_code.varCount++;
+    var code = "GameCircle " + name + " = world.goal = new GameCircle(world.getWorld(), ";
     code += (obj.nature === "dynamic" ? "BodyDef.BodyType.DynamicBody" : "BodyDef.BodyType.StaticBody");
     ["radius", "x", "y"].forEach(function(prop) {
       code += ", " + obj[prop] + "f";
@@ -1069,6 +1109,7 @@
     code += ");\n";
     code += "world.goal.body.setUserData(\"goal\");\n";
     code += "world.bodies.add(world.goal);\n";
+    gen_code.varMap[obj.id] = name;
     return code;
   }
   function gen_protagonist_code(obj) {
@@ -1088,7 +1129,8 @@
     return code;
   }
   function gen_circle_code(obj) {
-    var code = "world.bodies.add(new GameCircle(world.getWorld(), ";
+    var name = "tmp" + gen_code.varCount++;
+    var code = "GameCircle " + name + " = new GameCircle(world.getWorld(), ";
     code += (obj.nature === "dynamic" ? "BodyDef.BodyType.DynamicBody" : "BodyDef.BodyType.StaticBody");
     ["radius", "x", "y"].forEach(function(prop) {
       code += ", " + obj[prop] + "f";
@@ -1098,7 +1140,9 @@
     });
     code += ", ";
     code += gen_color(defaultColors[obj.nature]);
-    code += "));\n";
+    code += ");\n";
+    code += "world.bodies.add(" + name + ");\n";
+    gen_code.varMap[obj.id] = name;
     return code;
   }
   function gen_hollow_code(obj) {
@@ -1128,7 +1172,40 @@
     code += "));\n";
     return code;
   }
+  function gen_revolute_joint_code(joint) {
+    var code = "world.joints.add(new GameRevoluteJoint(";
+    ["enableLimit", "enableMotor", "collideConnected"].forEach(function(prop) {
+      code += joint[prop] + ", ";
+    });
+    ["motorSpeed", "maxMotorTorque", "lowerAngle", "upperAngle"].forEach(function(prop) {
+      code += joint[prop] + "f, ";
+    });
+    code += gen_code.varMap[joint.body1] + ", " + gen_code.varMap[joint.body2] + ", ";
+    code += joint.x + "f, " + joint.y + "f);\n";
+    return code;
+  }
+  function gen_distance_joint_code(joint) {
+    var code = "world.joints.add(new GameDistanceJoint(";
+    ["collideConnected"].forEach(function(prop) {
+      code += joint[prop] + ", ";
+    });
+    ["length", "dampingRatio", "frequencyHz"].forEach(function(prop) {
+      code += joint[prop] + "f, ";
+    });
+    code += gen_code.varMap[joint.body1] + ", " + gen_code.varMap[joint.body2] + ", ";
+    code += "0.0f, " + "0.0f);\n";
+    return code;
+  }
+  function gen_joint_code(joint) {
+    if (joint.type == "revolute") {
+      return gen_revolute_joint_code(joint);
+    } else if (joint.type == "distance") {
+      return gen_distance_joint_code(joint);
+    }
+  }
   function gen_code(scene) {
+    gen_code.varCount = 0;
+    gen_code.varMap = {};
     var code = "";
     code += "world.gameMenu.bgColor = " + gen_color(defaultColors.background) + ";\n";
     code += "world.pauseMenu.bgColor = " + gen_color(defaultColors.background) + ";\n";
@@ -1136,9 +1213,8 @@
     code += "world.levelDoneMenu.bgColor = " + gen_color(defaultColors.background) + ";\n";
     var colors = scene.colors;
     var physicsValues = scene.physicsValues;
-    scene = scene.scene;
-    for (var i = 0; i < scene.length; i++) {
-      var obj = scene[i];
+    for (var i = 0; i < scene.scene.length; i++) {
+      var obj = scene.scene[i];
       switch (obj.type) {
       case "circle":
         code += gen_circle_code(obj);
@@ -1157,8 +1233,14 @@
         break;
       }
     }
+    for (var i = 0; i < scene.joints.length; i++) {
+      var joint = scene.joints[i];
+      code += gen_joint_code(joint);
+    }
     return code;
   }
+  gen_code.varCount = 0;
+  gen_code.varMap = {};
   function updateCode() {
     var jsonObj = exportScene();
     document.querySelector("#json").value = JSON.stringify(jsonObj);
@@ -1306,7 +1388,7 @@
         jointDef.localAnchorA = new b2Vec2(0, 0);
         jointDef.localAnchorB = new b2Vec2(0, 0);
         jointDef.length = joint.length;
-        jointDef.collideConnected = true;
+        jointDef.collideConnected = joint.collideConnected;
         jointDef.frequencyHz = joint.frequencyHz;
         world.CreateJoint(jointDef);
         return function() {
@@ -1316,7 +1398,7 @@
         break;
       case jointManager.JOINT_REVOLUTE:
         var jointDef = new b2RevoluteJointDef();
-        ["lowerAngle", "upperAngle", "enableLimit", "maxMotorTorque", "motorSpeed", "enableMotor"].forEach(function(prop) {
+        ["lowerAngle", "upperAngle", "enableLimit", "maxMotorTorque", "motorSpeed", "enableMotor", "collideConnected"].forEach(function(prop) {
           jointDef[prop] = joint[prop];
         });
         var joint = jointDef.InitializeAndCreate(body1, body2, new b2Vec2(exportScale(joint.point1._x), exportScale(joint.point1._y)));
