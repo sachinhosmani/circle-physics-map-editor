@@ -65,7 +65,8 @@
     goal: "#d2bb69",
     background: "#563b1b",
     dynamic: "#434d42",
-    point: "grey"
+    point: "grey",
+    "distance-joint": "#000000"
   };
   var UIManager = {
     points: [],
@@ -343,6 +344,7 @@
           joints[point._jointIndex].line.shape.remove();
           self._removeJoint(point);
         });
+        this.lastPoint = null;
       } else if (this.type === this.JOINT_REVOLUTE && this.count === 3) {
         this._colorPoints([point], "cyan");
         addJoint([this.lastShapes[0], this.lastShapes[1]], [point], this.type);
@@ -352,6 +354,7 @@
         point.shape.dblclick(function() {
           self._removeJoint(point);
         });
+        this.lastPoint = null;
       } else {
         this.lastPoint = point;
         this.lastShapes.push(shape);
@@ -419,6 +422,9 @@
     var color = defaultColors[type];
     if (type == "chain") {
       return obj.stroke({color: defaultColors[type], width: 2});
+    }
+    if (type == "distance-joint") {
+      return obj.stroke({color: defaultColors[type], width: 1});
     }
     return obj.attr({fill: color});
   }
@@ -646,6 +652,7 @@
   }
   function drawDistanceJoint(markingPoint1, markingPoint2, shape1, shape2, recurse) {
     var polygon = drawPolygon([[markingPoint1._x, markingPoint1._y], [markingPoint2._x, markingPoint2._y]], true);
+    strokeAndFill(polygon.shape, "distance-joint");
     markingPoint1._line = markingPoint2._line = polygon;
     markingPoint1._jointIndex = markingPoint2._jointIndex = joints.length;
     var joint = new DistanceJoint(shape1, markingPoint1, shape2, markingPoint2, polygon);
@@ -714,18 +721,23 @@
   }
   configureJoint.updatelength = function(event) {
     configureJoint.joint.length = parseFloat(this.value);
+    updateCode();
   };
   configureJoint.updatefrequencyHz = function(event) {
     configureJoint.joint.frequencyHz = parseFloat(this.value);
+    updateCode();
   };
   configureJoint.updatedampingRatio = function(event) {
     configureJoint.joint.dampingRatio = parseFloat(this.value);
+    updateCode();
   };
   configureJoint.updateupperAngle = function(event) {
     configureJoint.joint.upperAngle = parseFloat(this.value) / 180 * Math.PI;
+    updateCode();
   };
   configureJoint.updatelowerAngle = function(event) {
     configureJoint.joint.lowerAngle = parseFloat(this.value) / 180 * Math.PI;
+    updateCode();
   };
   configureJoint.updatemotorSpeed = function(event) {
     configureJoint.joint.motorSpeed = parseFloat(this.value);
@@ -734,12 +746,15 @@
     } else {
       configureJoint.joint.enableMotor = false;
     }
+    updateCode();
   };
   configureJoint.updatemaxMotorTorque = function(event) {
     configureJoint.joint.maxMotorTorque = parseFloat(this.value);
+    updateCode();
   };
   configureJoint.updateenableLimit = function(event) {
     configureJoint.joint.enableLimit = this.value === "true";
+    updateCode();
   };
   configureJoint.reset = function() {
     if (!configureJoint.joint) {
@@ -969,6 +984,9 @@
     });
     jointJSON = [];
     joints.forEach(function(joint) {
+      if (!joint) {
+        return;
+      }
       switch (joint.type) {
       case jointManager.JOINT_DISTANCE:
         jointJSON.push({
@@ -1071,7 +1089,7 @@
       }
     }
     ["protagonist-color", "hollow-color", "background-color", "dynamic-color",
-    "static-color", "chain-color", "goal-color"].forEach(function(id) {
+    "static-color", "chain-color", "goal-color", "distance-joint-color"].forEach(function(id) {
       var el = document.querySelector("#" + id);
       el.value = defaultColors[el.dataset.type];
     });
@@ -1173,7 +1191,7 @@
     return code;
   }
   function gen_revolute_joint_code(joint) {
-    var code = "world.joints.add(new GameRevoluteJoint(";
+    var code = "world.joints.add(new GameRevoluteJoint(world, ";
     ["enableLimit", "enableMotor", "collideConnected"].forEach(function(prop) {
       code += joint[prop] + ", ";
     });
@@ -1181,19 +1199,20 @@
       code += joint[prop] + "f, ";
     });
     code += gen_code.varMap[joint.body1] + ", " + gen_code.varMap[joint.body2] + ", ";
-    code += joint.x + "f, " + joint.y + "f);\n";
+    code += joint.x + "f, " + joint.y + "f));\n";
     return code;
   }
   function gen_distance_joint_code(joint) {
-    var code = "world.joints.add(new GameDistanceJoint(";
+    var code = "world.joints.add(new GameDistanceJoint(world, ";
     ["collideConnected"].forEach(function(prop) {
       code += joint[prop] + ", ";
     });
     ["length", "dampingRatio", "frequencyHz"].forEach(function(prop) {
       code += joint[prop] + "f, ";
     });
-    code += gen_code.varMap[joint.body1] + ", " + gen_code.varMap[joint.body2] + ", ";
-    code += "0.0f, " + "0.0f);\n";
+    code += gen_color(defaultColors["distance-joint"]) + ", ";
+    code += gen_code.varMap[joint.body1] + ", " + gen_code.varMap[joint.body2];
+    code += "));\n";
     return code;
   }
   function gen_joint_code(joint) {
@@ -1393,7 +1412,7 @@
         world.CreateJoint(jointDef);
         return function() {
           return strokeAndFill(svg.line(mapX(simulateScale(body1.GetPosition().x)), mapY(simulateScale(body1.GetPosition().y)),
-            mapX(simulateScale(body2.GetPosition().x)), mapY(simulateScale(body2.GetPosition().y))), "chain");
+            mapX(simulateScale(body2.GetPosition().x)), mapY(simulateScale(body2.GetPosition().y))), "distance-joint");
         };
         break;
       case jointManager.JOINT_REVOLUTE:
@@ -1637,7 +1656,7 @@
       forceX = parseFloat(this.value);
     });
     ["protagonist-color", "hollow-color", "background-color", "dynamic-color",
-    "static-color", "chain-color", "goal-color"].forEach(function(id) {
+    "static-color", "chain-color", "goal-color", "distance-joint-color"].forEach(function(id) {
       var el = document.querySelector("#" + id);
       el.value = defaultColors[el.dataset.type];
       el.addEventListener("change", function(event) {
@@ -1663,6 +1682,11 @@
           }
         }).forEach(function(shape) {
           strokeAndFill(shape.shape, el.dataset.type);
+        });
+        joints.filter(function(joint) {
+          return (joint instanceof DistanceJoint);
+        }).forEach(function(joint) {
+          strokeAndFill(joint.line.shape, el.dataset.type);
         });
         if (el.dataset.type === "hollow") {
           strokeAndFill(hollow, el.dataset.type);
