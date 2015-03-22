@@ -309,8 +309,8 @@
     this.frequencyHz = 0;
     this.collideConnected = true;
   }
-  function RevoluteJoint(shape1, point, shape2) {
-    Joint.call(this, shape1, point, shape2, null, jointManager.JOINT_REVOLUTE);
+  function RevoluteJoint(shape1, shape2) {
+    Joint.call(this, shape1, null, shape2, null, jointManager.JOINT_REVOLUTE);
     this.motorSpeed = 0;
     this.enableMotor = false;
     this.enableLimit = false;
@@ -362,13 +362,16 @@
           self._removeJoint(point);
         });
         this.lastPoint = null;
-      } else if (this.type === this.JOINT_REVOLUTE && this.count === 3) {
-        this._colorPoints([point], "cyan");
-        addJoint([this.lastShapes[0], this.lastShapes[1]], [point], this.type);
+      } else if (this.type === this.JOINT_REVOLUTE && this.count === 2) {
+        this._colorPoints([point, this.lastPoint], "cyan");
+        addJoint([this.lastShapes[0], shape], [this.lastPoint, point], this.type);
         this.count = 0;
         this.lastShapes.length = 0;
         var self = this;
         point.shape.dblclick(function() {
+          self._removeJoint(point);
+        });
+        this.lastPoint.shape.dblclick(function() {
           self._removeJoint(point);
         });
         this.lastPoint = null;
@@ -482,7 +485,7 @@
       return joint;
       break;
     case jointManager.JOINT_REVOLUTE:
-      var joint = drawRevoluteJoint(points[0], shapes[0], shapes[1]);
+      var joint = drawRevoluteJoint(points[0], points[1], shapes[0], shapes[1]);
       updateCode();
       return joint;
       break;
@@ -725,22 +728,16 @@
     });
     return joint;
   }
-  function drawRevoluteJoint(markingPoint, shape1, shape2, recurse) {
-    markingPoint._jointIndex = joints.length;
-    var joint = new RevoluteJoint(shape1, markingPoint, shape2);
+  function drawRevoluteJoint(markingPoint1, markingPoint2, shape1, shape2, recurse) {
+    markingPoint1._jointIndex =  markingPoint2._jointIndex = joints.length;
+    var joint = new RevoluteJoint(shape1, shape2);
     joints.push(joint);
     if (!recurse) {
-      markingPoint.shape.draggable(function(x, y) {
-        markingPoint._x = deMapX(x) + pointRadius;
-        markingPoint._y = deMapY(y) - pointRadius;
-        joints[markingPoint._jointIndex] = null;
-        drawRevoluteJoint(markingPoint, shape1, shape2, true);
-        updateCode();
-        return true;
-      });
-      markingPoint.shape.mousedown(function() {
-        configureJoint(joint);
-        UIManager.cancelDraw();
+      [markingPoint1, markingPoint2].forEach(function(point) {
+        point.shape.mousedown(function() {
+          configureJoint(joint);
+          UIManager.cancelDraw();
+        });
       });
     };
     return joint;
@@ -1085,9 +1082,7 @@
           upperAngle: joint.upperAngle,
           collideConnected: joint.collideConnected,
           body1: joint.shape1.id,
-          body2: joint.shape2.id,
-          x: exportScale(joint.point1._x),
-          y: exportScale(joint.point1._y)
+          body2: joint.shape2.id
         });
         break;
       }
@@ -1273,8 +1268,7 @@
     ["motorSpeed", "maxMotorTorque", "lowerAngle", "upperAngle"].forEach(function(prop) {
       code += joint[prop] + "f, ";
     });
-    code += gen_code.varMap[joint.body1] + ", " + gen_code.varMap[joint.body2] + ", ";
-    code += joint.x + "f, " + joint.y + "f));\n";
+    code += gen_code.varMap[joint.body1] + ", " + gen_code.varMap[joint.body2] + "f));\n";
     return code;
   }
   function gen_distance_joint_code(joint) {
@@ -1541,7 +1535,7 @@
         ["lowerAngle", "upperAngle", "enableLimit", "maxMotorTorque", "motorSpeed", "enableMotor", "collideConnected"].forEach(function(prop) {
           jointDef[prop] = joint[prop];
         });
-        var joint = jointDef.InitializeAndCreate(body1, body2, new b2Vec2(exportScale(joint.point1._x), exportScale(joint.point1._y)));
+        var joint = jointDef.InitializeAndCreate(body1, body2, new b2Vec2((body1.GetPosition().x)), (body1.GetPosition().y));
         return function() {
         };
         break;
