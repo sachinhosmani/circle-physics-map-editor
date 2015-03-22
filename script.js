@@ -22,7 +22,7 @@
   var curveMode = false;
   var gravity = -37;
   var forceX = 130;
-  var pointRadius = 8;
+  var pointRadius = 6;
   var oldScrollX = null, oldScrollY  = null;
   var joints = [];
   function exportScale(n) {
@@ -469,6 +469,11 @@
         UIManager.state = UIManager.STATE_CIRCLE;
         UIManager.markingCircle = shape;
         UIManager.points = [new SAT.Vector(deMapX(shapeToSAT[shape.id].pos.x), deMapY(shapeToSAT[shape.id].pos.y))];
+      } else if (shape.type === ShapeWrapper.TYPE_RECTANGLE && editMode === true) {
+        UIManager.state = UIManager.STATE_CIRCLE;
+        UIManager.markingRectangle = shape;
+        UIManager.rectangleSource = new SAT.Vector(deMapX(shapeToSAT[shape.id].pos.x), deMapY(shapeToSAT[shape.id].pos.y));
+        UIManager.points = [rectangleSource];
       }
     });
     /*shape.shape.mouseup(function() {
