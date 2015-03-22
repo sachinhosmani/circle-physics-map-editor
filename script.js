@@ -26,6 +26,7 @@
   var pointRadius = 6;
   var oldScrollX = null, oldScrollY  = null;
   var joints = [];
+  var allPoints = [];
   function exportScale(n) {
     return n / 30;
   }
@@ -477,6 +478,16 @@
   function deMapY(y) {
     return graphSize / 2 - y;
   }
+  function hideAllMarkingPoints() {
+    allPoints.forEach(function(point) {
+      point.shape.hide();
+    });
+  }
+  function showAllMarkingPoints() {
+    allPoints.forEach(function(point) {
+      point.shape.show();
+    });
+  }
   function strokeAndFill(obj, type) {
     var color = defaultColors[type];
     if (type == "chain") {
@@ -505,15 +516,21 @@
     shape.shape.mousedown(function() {
       if (!editMode) UIManager.cancelDraw();
       if (shape.type === ShapeWrapper.TYPE_CIRCLE && editMode === true) {
+        rectangleMode = false;
         UIManager.state = UIManager.STATE_CIRCLE;
         UIManager.markingCircle = shape;
         UIManager.points = [new SAT.Vector(deMapX(shapeToSAT[shape.id].pos.x), deMapY(shapeToSAT[shape.id].pos.y))];
       } else if (shape.type === ShapeWrapper.TYPE_RECTANGLE && editMode === true) {
+        rectangleMode = true;
         UIManager.state = UIManager.STATE_CIRCLE;
         UIManager.markingRectangle = shape;
         UIManager.rectangleSource = new SAT.Vector(deMapX(shapeToSAT[shape.id].pos.x), deMapY(shapeToSAT[shape.id].pos.y));
-        UIManager.points = [rectangleSource];
+        UIManager.points = [UIManager.rectangleSource];
       }
+    });
+    shape.shape.mouseup(function() {
+      if (!editMode) return;
+       rectangleMode = (document.querySelector("#shape").value === "rectangle");
     });
     /*shape.shape.mouseup(function() {
       UIManager.cancelDraw();
@@ -539,6 +556,7 @@
     var shape = new ShapeWrapper(strokeAndFill(svg.circle(2 * pointRadius).move(mapX(x - pointRadius), mapY(y + pointRadius)), "point"), ShapeWrapper.TYPE_CIRCLE);
     shape.x = x;
     shape.y = y;
+    allPoints.push(shape);
     return shape;
   }
   function drawHollow(r) {
@@ -1581,7 +1599,7 @@
         ["lowerAngle", "upperAngle", "enableLimit", "maxMotorTorque", "motorSpeed", "enableMotor", "collideConnected"].forEach(function(prop) {
           jointDef[prop] = joint[prop];
         });
-        var joint = jointDef.InitializeAndCreate(body1, body2, new b2Vec2((body1.GetPosition().x)), (body1.GetPosition().y));
+        var joint = jointDef.InitializeAndCreate(body1, body2, new b2Vec2(body1.GetPosition().x, body1.GetPosition().y));
         return function() {
         };
         break;
@@ -1748,6 +1766,18 @@
       UIManager._clearMarkingLines();
       this.hidden = true;
       document.querySelector("#enableMarkingLines").hidden = false;
+    });
+    document.querySelector("#showMarkingPoints").addEventListener("click", function() {
+      showMarkingPoints = true;
+      this.hidden = true;
+      showAllMarkingPoints();
+      document.querySelector("#hideMarkingPoints").hidden = false;
+    });
+    document.querySelector("#hideMarkingPoints").addEventListener("click", function() {
+      showMarkingPoints = false;
+      this.hidden = true;
+      hideAllMarkingPoints();
+      document.querySelector("#showMarkingPoints").hidden = false;
     });
     document.querySelector("#enablePhoneMode").addEventListener("click", function() {
       showPhoneMode = true;
