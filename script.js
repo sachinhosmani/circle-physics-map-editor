@@ -15,6 +15,7 @@
   var exportChainShapes = [];
   var constrained = true;
   var editMode = false;
+  var rectangleMode = false;
   var simulationMode = false;
   var showMarkingLines = false;
   var showPhoneMode = false;
@@ -35,6 +36,12 @@
   }
   var defaultPhysicsValues = {
     circle: {
+      friction: 0.2,
+      restitution: 0.0,
+      angularDamping: 2.2,
+      density: 1.0
+    },
+    rectangle: {
       friction: 0.2,
       restitution: 0.0,
       angularDamping: 2.2,
@@ -66,7 +73,8 @@
     background: "#563b1b",
     dynamic: "#434d42",
     point: "grey",
-    "distance-joint": "#000000"
+    "distance-joint": "#000000",
+    rectangle: "#123412"
   };
   var UIManager = {
     points: [],
@@ -74,6 +82,7 @@
     markingPoints: [],
     markingLines: [],
     markingBoxes: [],
+    rectangleSource: new SAT.Vector(0, 0),
     displacedX: null,
     displacedY: null,
     STATE_IDLE: 1,
@@ -98,6 +107,9 @@
       markingPoint._x = x;
       markingPoint._y = y;
       this.markingPoints.push(markingPoint);
+      if (rectangleMode) {
+        this.rectangleSource = new SAT.Vector(x, y);
+      }
     },
     onMouseUp: function(x, y) {
       if (simulationMode) return;
@@ -110,6 +122,7 @@
       if (this.state === this.STATE_CIRCLE) {
         this.state = this.STATE_IDLE;
         this.markingCircle = null;
+        this.markingRectangle = null;
         this.points = [];
         this._clearMarkingPoints();
       } else if (this.state === this.STATE_START) {
@@ -150,12 +163,21 @@
       this._clearMarkingBoxes();
       if (!curveMode && (this.state === this.STATE_START || this.state === this.STATE_CIRCLE)) {
         this.state = this.STATE_CIRCLE;
-        var r = this.points[0].clone().sub(new SAT.Vector(x, y)).len();
-        this._updateMarkingBoxes(r);
-        if (!this.markingCircle) {
-          this.markingCircle = drawCircle(this.points[0].x, this.points[0].y, r);
+        if (!rectangleMode) {
+          var r = this.points[0].clone().sub(new SAT.Vector(x, y)).len();
+          this._updateMarkingBoxes(r);
+          if (!this.markingCircle) {
+            this.markingCircle = drawCircle(this.points[0].x, this.points[0].y, r);
+          } else {
+            updateRadius(this.markingCircle, r);
+          }
         } else {
-          updateRadius(this.markingCircle, r);
+          if (!this.markingRectangle) {
+            this.markingRectangle = drawRectangle(this.rectangleSource.x, this.rectangleSource.y,
+              Math.abs(this.rectangleSource.x - x), Math.abs(this.rectangleSource.y - y));
+          } else {
+            updateRectangle(this.markingRectangle, Math.abs(this.rectangleSource.x - x), Math.abs(this.rectangleSource.y - y));
+          }
         }
       }
     },
@@ -266,16 +288,11 @@
   ShapeWrapper.TYPE_CIRCLE = 1;
   ShapeWrapper.TYPE_POLYGON = 2;
   ShapeWrapper.TYPE_CURVE = 3;
-  ShapeWrapper.TYPE_CURVE = 3;
+  ShapeWrapper.TYPE_RECTANGLE = 4;
   ShapeWrapper.NATURE_STATIC = 0;
   ShapeWrapper.NATURE_DYNAMIC = 1;
   ShapeWrapper.NATURE_PROTAGONIST = 2;
   ShapeWrapper.NATURE_GOAL = 3;
-  ShapeWrapper.colorMap = {};
-  ShapeWrapper.colorMap[ShapeWrapper.NATURE_STATIC] = "white";
-  ShapeWrapper.colorMap[ShapeWrapper.NATURE_DYNAMIC] = "black";
-  ShapeWrapper.colorMap[ShapeWrapper.NATURE_PROTAGONIST] = "green";
-  ShapeWrapper.colorMap[ShapeWrapper.NATURE_GOAL] = "red";
   ShapeWrapper.ID = 0;
   function Joint(shape1, point1, shape2, point2, type) {
     this.shape1 = shape1;
@@ -498,6 +515,14 @@
     redrawAxes();
     updateCode();
   }
+  function updateRectangle(rectangle, w, h) {
+    rectangle.shape.width(w);
+    rectangle.shape.height(h);
+    rectangle.w = w;
+    rectangle.h = h;
+    redrawAxes();
+    updateCode();
+  }
   function nextNature(shape, x, y) {
     if (shape.nature === ShapeWrapper.NATURE_PROTAGONIST) {
       shape._phoneBoundary.remove();
@@ -556,11 +581,37 @@
     return shape;
   }
   function drawRectangle(x, y, w, h, dummy) {
-    var shape = drawPolygon([[x, y], [x + w, y], [x + w, y + h], [x, y + h]], dummy);
+    var rectangle = strokeAndFill(svg.rect(w, h).move(mapX(x), mapY(y)), "rectangle");
+    redrawAxes();
+    var shape = new ShapeWrapper(rectangle, ShapeWrapper.TYPE_RECTANGLE);
+    shape.w = w;
+    shape.h = h;
+    shape.nature = ShapeWrapper.NATURE_DYNAMIC;
     if (dummy) {
       return shape;
     }
+    storeShape(shape);
+    shape.shape.dblclick(function() {
+      if (editMode === true) {
+        removeShape(shape);
+        lastShapes[shape.lastShapeIndex] = null;
+        updateCode();
+        UIManager.cancelDraw();
+        return;
+      }
+    });
+    shapeToSAT[shape.id] = new SAT.Polygon(new SAT.Vector(mapX(x), mapY(y)), [
+      new SAT.Vector(mapX(x), mapY(y)),
+      new SAT.Vector(mapX(x), mapY(y + h)),
+      new SAT.Vector(mapX(x + w), mapY(y + h)),
+      new SAT.Vector(mapX(x + w), mapY(y))
+    ]);
+    shape.shape.click(function(event) {
+      jointManager.nextPoint(shape, transformCoordinates2(event.x, event.y));
+    });
+    makeDraggable(shape);
     lastShapes.push([shape]);
+    shape.lastShapeIndex = lastShapes.length - 1;
     updateCode();
     return shape;
   }
@@ -855,16 +906,20 @@
       return res;
     }
     var distance = new SAT.Vector(graphSize / 2, graphSize / 2);
-    distance.sub(new SAT.Vector(x + shape.r, y + shape.r));
-    if (constrained && distance.len() >
-      hollowRadius - shape.r) {
-      return false;
+    var oldPos = shapeToSAT[shape.id].pos.clone();;
+    if (shape.type === ShapeWrapper.TYPE_CIRCLE) {
+      distance.sub(new SAT.Vector(x + shape.r, y + shape.r));
+      if (constrained && distance.len() >
+        hollowRadius - shape.r) {
+        return false;
+      }
+      shapeToSAT[shape.id].pos.x = x + shape.r;
+      shapeToSAT[shape.id].pos.y = y + shape.r;
+    } else if (shape.type === ShapeWrapper.TYPE_RECTANGLE) {
+      shapeToSAT[shape.id].pos.x = x;
+      shapeToSAT[shape.id].pos.y = y;
     }
-    var oldPos = shapeToSAT[shape.id].pos.clone();
-    shapeToSAT[shape.id].pos.x = x + shape.r;
-    shapeToSAT[shape.id].pos.y = y + shape.r;
     var result = false;
-    var onPolygonPoint = false;
     shapes.forEach(function (aShape) {
       if (aShape.id === shape.id) {
         return;
@@ -885,10 +940,16 @@
   checkOverlaps.lambdas = {};
   checkOverlaps.lambdas[ShapeWrapper.TYPE_CIRCLE] = {};
   checkOverlaps.lambdas[ShapeWrapper.TYPE_POLYGON] = {};
+  checkOverlaps.lambdas[ShapeWrapper.TYPE_RECTANGLE] = {};
   checkOverlaps.lambdas[ShapeWrapper.TYPE_CIRCLE][ShapeWrapper.TYPE_CIRCLE] = SAT.testCircleCircle;
   checkOverlaps.lambdas[ShapeWrapper.TYPE_CIRCLE][ShapeWrapper.TYPE_POLYGON] = SAT.testCirclePolygon;
+  checkOverlaps.lambdas[ShapeWrapper.TYPE_CIRCLE][ShapeWrapper.TYPE_RECTANGLE] = function() {return false;};
   checkOverlaps.lambdas[ShapeWrapper.TYPE_POLYGON][ShapeWrapper.TYPE_CIRCLE] = SAT.testPolygonCircle;
   checkOverlaps.lambdas[ShapeWrapper.TYPE_POLYGON][ShapeWrapper.TYPE_POLYGON] = SAT.testPolygonPolygon;
+  checkOverlaps.lambdas[ShapeWrapper.TYPE_POLYGON][ShapeWrapper.TYPE_RECTANGLE] = function() {return false;};
+  checkOverlaps.lambdas[ShapeWrapper.TYPE_RECTANGLE][ShapeWrapper.TYPE_CIRCLE] = function() {return false;};
+  checkOverlaps.lambdas[ShapeWrapper.TYPE_RECTANGLE][ShapeWrapper.TYPE_POLYGON] = function() {return false;};
+  checkOverlaps.lambdas[ShapeWrapper.TYPE_RECTANGLE][ShapeWrapper.TYPE_RECTANGLE] = function() {return false;};
 
   function removeShape(shape) {
     shape.shape.remove();
@@ -967,6 +1028,20 @@
         default:
           throw new Error("Invalid shape.nature");
         }
+        scene.push(obj);
+      } else if (shape.type === ShapeWrapper.TYPE_RECTANGLE) {
+        var SATShape = shapeToSAT[shape.id];
+        var obj = {
+          x: exportScale(deMapX(SATShape.pos.x)),
+          y: exportScale(deMapY(SATShape.pos.y)),
+          w: exportScale(shape.w),
+          h: exportScale(shape.h)
+        };
+        if ("id" in shape) {
+          obj.id = shape.id;
+        }
+        obj.type = "rectangle";
+        obj.nature = "dynamic";
         scene.push(obj);
       }
     });
@@ -1396,6 +1471,52 @@
         return shapes;
       };
     }
+    function createBox2dRectangle(obj) {
+      function rotatePoint(pointX, pointY, originX, originY, angle) {
+        return {
+          x: Math.cos(angle) * (pointX - originX) - Math.sin(angle) * (pointY - originY) + originX,
+          y: Math.sin(angle) * (pointX - originX) + Math.cos(angle) * (pointY - originY) + originY
+        };
+      }
+      var x = obj.x, y = obj.y, h = obj.h, w = obj.w;
+      var friction = defaultPhysicsValues.rectangle.friction, restitution = defaultPhysicsValues.rectangle.restitution;
+      var angularDamping = defaultPhysicsValues.rectangle.angularDamping, density = defaultPhysicsValues.rectangle.density;
+      var bodyDef = new b2BodyDef();
+      bodyDef.allowSleep = true;
+      bodyDef.angularDamping = angularDamping;
+      bodyDef.position.Set(x + w/2, y - h/2);
+      // bodyDef.type = (obj.nature == "dynamic" ? b2Body.b2_dynamicBody : b2Body.b2_staticBody);
+      bodyDef.type = (obj.nature == "dynamic" ? b2_dynamicBody : b2_staticBody);
+      var body = world.CreateBody(bodyDef);
+      var shape = new b2PolygonShape();
+      // shape.SetAsBoxXY(w, h);
+      shape.vertices.push(new b2Vec2(-w/2, -h/2));
+      shape.vertices.push(new b2Vec2(w/2, -h/2));
+      shape.vertices.push(new b2Vec2(w/2, h/2));
+      shape.vertices.push(new b2Vec2(-w/2, h/2));
+      var fixtureDef = new b2FixtureDef();
+      fixtureDef.shape = shape;
+      fixtureDef.friction = friction;
+      fixtureDef.restitution = restitution;
+      fixtureDef.density = density;
+      fixtureDef.angularDamping = angularDamping;
+      // body.CreateFixture(fixtureDef);
+      body.CreateFixtureFromDef(fixtureDef);
+      bodyMap[obj.id] = body;
+      return function() {
+        var polygonString = "";
+        var center = new b2Vec2(mapX(simulateScale(body.GetPosition().x)), mapY(simulateScale(body.GetPosition().y)));
+        [new b2Vec2(mapX(simulateScale(body.GetPosition().x - w/2)), mapY(simulateScale(body.GetPosition().y - h/2))),
+          new b2Vec2(mapX(simulateScale(body.GetPosition().x + w/2)), mapY(simulateScale(body.GetPosition().y - h/2))),
+          new b2Vec2(mapX(simulateScale(body.GetPosition().x + w/2)), mapY(simulateScale(body.GetPosition().y + h/2))),
+          new b2Vec2(mapX(simulateScale(body.GetPosition().x - w/2)), mapY(simulateScale(body.GetPosition().y + h/2)))
+        ].forEach(function(pos) {
+          var point = rotatePoint(pos.x, pos.y, center.x, center.y, -body.GetAngle());
+          polygonString += Math.floor(point.x) + "," + Math.floor(point.y) + " ";
+        });
+        return strokeAndFill(svg.polygon(polygonString), "rectangle");
+      };
+    }
     function createBox2dJoint(joint) {
       var body1 = bodyMap[joint.shape1.id];
       var body2 = bodyMap[joint.shape2.id];
@@ -1446,6 +1567,9 @@
           break;
         case "chain":
           world.renderMethods.push(createBox2dChain(obj));
+          break;
+        case "rectangle":
+          world.renderMethods.push(createBox2dRectangle(obj));
           break;
       }
     }
@@ -1712,6 +1836,9 @@
     document.querySelector("#joints").addEventListener("change", function() {
       jointManager.jointMode = (this.value !== "none");
       jointManager.type = jointTypes[this.selectedIndex];
+    });
+    document.querySelector("#shape").addEventListener("change", function() {
+      rectangleMode = (this.value === "rectangle");
     });
   }
   window.addEventListener("load", onLoad);
