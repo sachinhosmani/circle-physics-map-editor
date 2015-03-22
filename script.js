@@ -15,6 +15,7 @@
   var exportChainShapes = [];
   var constrained = true;
   var editMode = false;
+  var centerMode = false;
   var rectangleMode = false;
   var simulationMode = false;
   var showMarkingLines = false;
@@ -94,7 +95,7 @@
     state: 1,
     onMouseDown: function(x, y) {
       if (simulationMode) return;
-      if (editMode) return;
+      if (editMode || centerMode) return;
       if (jointManager.jointMode) return;
       if (this.state === this.STATE_CANCELLED) {
         return;
@@ -114,6 +115,7 @@
     onMouseUp: function(x, y) {
       if (simulationMode) return;
       if (jointManager.jointMode) return;
+      if (centerMode) return;
       if (this.state === this.STATE_CANCELLED) {
         this.cancelDraw();
         this.state = this.STATE_IDLE;
@@ -144,7 +146,7 @@
     onContextMenu: function(x, y) {
       if (jointManager.jointMode) return;
       if (simulationMode) return;
-      if (editMode) return;
+      if (editMode || centerMode) return;
       if (this.points.length > 1) {
         this.state = this.STATE_IDLE;
         drawChainShape(this.markingPoints);
@@ -390,6 +392,43 @@
       configureJoint.reset();
     }
   };
+  var centerManager = {
+    count: 0,
+    lastShape: null,
+    nextPoint: function(point, shape) {
+      if (!centerMode) {
+        return;
+      }
+      this.count++;
+      if (this.count === 2) {
+        this.count = 0;
+        this._center(this.lastShape, shape);
+      }
+      this.lastShape = shape;
+    },
+    _center: function(shape1, shape2) {
+      var center1 = new SAT.Vector(shapeToSAT[shape1.id].pos.x, shapeToSAT[shape1.id].pos.y);
+      var center2 = new SAT.Vector(shapeToSAT[shape2.id].pos.x, shapeToSAT[shape2.id].pos.y);
+      if (shape1.type === ShapeWrapper.TYPE_RECTANGLE) {
+        center1.x += shape1.w/2;
+        center1.y += shape1.h/2;
+      }
+      if (shape2.type === ShapeWrapper.TYPE_RECTANGLE) {
+        center2.x += shape2.w/2;
+        center2.y += shape2.h/2;
+      }
+      var copy = center2.clone();
+      copy.sub(center1);
+      if (shape1.type === ShapeWrapper.TYPE_CIRCLE) {
+        shape1.shape.move(center2.x - shape1.r, center2.y - shape1.r);
+      } else if (shape1.type === ShapeWrapper.TYPE_RECTANGLE) {
+        shape1.shape.move(center2.x - shape1.w/2, center2.y - shape1.h/2);
+      }
+      shapeToSAT[shape1.id].pos.x += copy.x;
+      shapeToSAT[shape1.id].pos.y += copy.y;
+      updateCode();
+    }
+  };
   var jointTypes = [jointManager.JOINT_NONE, jointManager.JOINT_REVOLUTE, jointManager.JOINT_DISTANCE];
   function transformCoordinates(event) {
     var div = document.querySelector("#canvasDiv");
@@ -581,6 +620,7 @@
     });
     shape.shape.click(function(event) {
       jointManager.nextPoint(shape, transformCoordinates2(event.x, event.y));
+      centerManager.nextPoint(transformCoordinates2(event.x, event.y), shape);
     });
     makeDraggable(shape);
     lastShapes.push([shape]);
@@ -616,6 +656,7 @@
     ]);
     shape.shape.click(function(event) {
       jointManager.nextPoint(shape, transformCoordinates2(event.x, event.y));
+      centerManager.nextPoint(transformCoordinates2(event.x, event.y), shape);
     });
     makeDraggable(shape);
     lastShapes.push([shape]);
@@ -908,7 +949,7 @@
       return res;
     }
     var distance = new SAT.Vector(graphSize / 2, graphSize / 2);
-    var oldPos = shapeToSAT[shape.id].pos.clone();;
+    var oldPos = shapeToSAT[shape.id].pos.clone();
     if (shape.type === ShapeWrapper.TYPE_CIRCLE) {
       distance.sub(new SAT.Vector(x + shape.r, y + shape.r));
       if (constrained && distance.len() >
@@ -1739,9 +1780,15 @@
     document.querySelector("#normalRadio").addEventListener("click", function(event) {
       UIManager.state = UIManager.STATE_IDLE;
       editMode = false;
+      centerMode = false;
     });
     document.querySelector("#editRadio").addEventListener("click", function(event) {
       editMode = true;
+      centerMode = false;
+    });
+    document.querySelector("#centerRadio").addEventListener("click", function(event) {
+      editMode = false;
+      centerMode = true;
     });
     document.querySelector("#simulate").addEventListener("click", function(event) {
       simulationMode = true;
