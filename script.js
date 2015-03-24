@@ -16,6 +16,7 @@
   var constrained = true;
   var editMode = false;
   var centerMode = false;
+  var rotateMode = false;
   var rectangleMode = false;
   var simulationMode = false;
   var showMarkingLines = false;
@@ -96,7 +97,7 @@
     state: 1,
     onMouseDown: function(x, y) {
       if (simulationMode) return;
-      if (editMode || centerMode) return;
+      if (editMode || centerMode || rotateMode) return;
       if (jointManager.jointMode) return;
       if (this.state === this.STATE_CANCELLED) {
         return;
@@ -116,7 +117,7 @@
     onMouseUp: function(x, y) {
       if (simulationMode) return;
       if (jointManager.jointMode) return;
-      if (centerMode) return;
+      if (centerMode || rotateMode) return;
       if (this.state === this.STATE_CANCELLED) {
         this.cancelDraw();
         this.state = this.STATE_IDLE;
@@ -147,7 +148,7 @@
     onContextMenu: function(x, y) {
       if (jointManager.jointMode) return;
       if (simulationMode) return;
-      if (editMode || centerMode) return;
+      if (editMode || centerMode || rotateMode) return;
       if (this.points.length > 1) {
         this.state = this.STATE_IDLE;
         drawChainShape(this.markingPoints);
@@ -498,17 +499,29 @@
     }
     return obj.attr({fill: color});
   }
+  function findAngle(x1, y1, x2, y2) {
+    return -Math.atan2(y2 - y1, x2 - x1) * 180 / Math.PI;
+  }
   function makeDraggable(wrapped) {
     wrapped.shape.draggable(function(x, y) {
-      return !editMode && !jointManager.jointMode && checkOverlaps(wrapped, x, y);
+      var res = !editMode && !centerMode && !rotateMode && !jointManager.jointMode && checkOverlaps(wrapped, x, y);
+      return res;
     });
     wrapped.shape.dragmove = function(delta, event) {
       redrawAxes();
-      updateCode();
       if (wrapped._phoneBoundary) {
         var SATShape = shapeToSAT[wrapped.id];
         wrapped._phoneBoundary.move(SATShape.pos.x - phoneWidth / 2, SATShape.pos.y - phoneHeight / 2);
       }
+      if (rotateMode && wrapped.type === ShapeWrapper.TYPE_RECTANGLE) {
+        var mousePos = transformCoordinates2(event.x, event.y);
+        var SATShape = shapeToSAT[wrapped.id];
+        var angle = findAngle(mousePos.x, mousePos.y, deMapX(SATShape.pos.x + wrapped.w/2), deMapY(SATShape.pos.y + wrapped.h/2));
+        wrapped.shape.rotate(angle);
+        wrapped.angle = angle;
+        wrapped.rotated = true;
+      }
+      updateCode();
       //UIManager.cancelDraw();
     };
   }
@@ -527,10 +540,18 @@
         UIManager.rectangleSource = new SAT.Vector(deMapX(shapeToSAT[shape.id].pos.x), deMapY(shapeToSAT[shape.id].pos.y));
         UIManager.points = [UIManager.rectangleSource];
       }
+      if (shape.type === ShapeWrapper.TYPE_RECTANGLE) {
+        if (!rotateMode && !editMode && shape.rotated && !jointManager.jointMode) {
+          shape.shape.rotate(0);
+          shape.angle = 180;
+          shape.rotated = false;
+          updateCode();
+        }
+      }
     });
     shape.shape.mouseup(function() {
       if (!editMode) return;
-       rectangleMode = (document.querySelector("#shape").value === "rectangle");
+      rectangleMode = (document.querySelector("#shape").value === "rectangle");
     });
     /*shape.shape.mouseup(function() {
       UIManager.cancelDraw();
@@ -652,6 +673,7 @@
     var shape = new ShapeWrapper(rectangle, ShapeWrapper.TYPE_RECTANGLE);
     shape.w = w;
     shape.h = h;
+    shape.angle = 180;
     shape.nature = ShapeWrapper.NATURE_DYNAMIC;
     if (dummy) {
       return shape;
@@ -1096,8 +1118,12 @@
           x: exportScale(deMapX(SATShape.pos.x)),
           y: exportScale(deMapY(SATShape.pos.y)),
           w: exportScale(shape.w),
-          h: exportScale(shape.h)
+          h: exportScale(shape.h),
+          angle: 180 - shape.angle
         };
+        if (obj.angle === 360) {
+          obj.angle = 0;
+        }
         if ("id" in shape) {
           obj.id = shape.id;
         }
@@ -1324,6 +1350,23 @@
     code += "));\n";
     return code;
   }
+  function gen_rectangle_code(obj) {
+    var name = "tmp" + gen_code.varCount++;
+    var code = "GameRectangle " + name + " = new GameCircle(world.getWorld(), ";
+    code += (obj.nature === "dynamic" ? "BodyDef.BodyType.DynamicBody" : "BodyDef.BodyType.StaticBody");
+    ["radius", "x", "y"].forEach(function(prop) {
+      code += ", " + obj[prop] + "f";
+    });
+    ["friction", "restitution", "density", "angularDamping"].forEach(function(prop) {
+      code += ", " + defaultPhysicsValues.circle[prop] + "f";
+    });
+    code += ", ";
+    code += gen_color(defaultColors[obj.nature]);
+    code += ");\n";
+    code += "world.bodies.add(" + name + ");\n";
+    gen_code.varMap[obj.id] = name;
+    return code;
+  }
   function gen_revolute_joint_code(joint) {
     var code = "world.joints.add(new GameRevoluteJoint(world, ";
     ["enableLimit", "enableMotor", "collideConnected"].forEach(function(prop) {
@@ -1382,6 +1425,9 @@
         break;
       case "chain":
         code += gen_chain_code(obj);
+        break;
+      case "rectangle":
+        code += gen_rectangle_code(obj);
         break;
       }
     }
@@ -1536,6 +1582,9 @@
           y: Math.sin(angle) * (pointX - originX) + Math.cos(angle) * (pointY - originY) + originY
         };
       }
+      function degreesToRadians(angle) {
+        return angle * Math.PI / 180;
+      }
       var x = obj.x, y = obj.y, h = obj.h, w = obj.w;
       var friction = defaultPhysicsValues.rectangle.friction, restitution = defaultPhysicsValues.rectangle.restitution;
       var angularDamping = defaultPhysicsValues.rectangle.angularDamping, density = defaultPhysicsValues.rectangle.density;
@@ -1548,10 +1597,15 @@
       var body = world.CreateBody(bodyDef);
       var shape = new b2PolygonShape();
       // shape.SetAsBoxXY(w, h);
-      shape.vertices.push(new b2Vec2(-w/2, -h/2));
-      shape.vertices.push(new b2Vec2(w/2, -h/2));
-      shape.vertices.push(new b2Vec2(w/2, h/2));
-      shape.vertices.push(new b2Vec2(-w/2, h/2));
+      var point = rotatePoint(-w/2, -h/2, 0, 0, degreesToRadians(obj.angle));
+      shape.vertices.push(new b2Vec2(point.x, point.y));
+      point = rotatePoint(w/2, -h/2, 0, 0, degreesToRadians(obj.angle));
+      shape.vertices.push(new b2Vec2(point.x, point.y));
+      point = rotatePoint(w/2, h/2, 0, 0, degreesToRadians(obj.angle));
+      shape.vertices.push(new b2Vec2(point.x, point.y));
+      point = rotatePoint(-w/2, h/2, 0, 0, degreesToRadians(obj.angle));
+      shape.vertices.push(new b2Vec2(point.x, point.y));
+
       var fixtureDef = new b2FixtureDef();
       fixtureDef.shape = shape;
       fixtureDef.friction = friction;
@@ -1569,7 +1623,7 @@
           new b2Vec2(mapX(simulateScale(body.GetPosition().x + w/2)), mapY(simulateScale(body.GetPosition().y + h/2))),
           new b2Vec2(mapX(simulateScale(body.GetPosition().x - w/2)), mapY(simulateScale(body.GetPosition().y + h/2)))
         ].forEach(function(pos) {
-          var point = rotatePoint(pos.x, pos.y, center.x, center.y, -body.GetAngle());
+          var point = rotatePoint(pos.x, pos.y, center.x, center.y, degreesToRadians(180 - obj.angle) - body.GetAngle());
           polygonString += Math.floor(point.x) + "," + Math.floor(point.y) + " ";
         });
         return strokeAndFill(svg.polygon(polygonString), "rectangle");
@@ -1811,14 +1865,22 @@
       UIManager.state = UIManager.STATE_IDLE;
       editMode = false;
       centerMode = false;
+      rotateMode = false;
     });
     document.querySelector("#editRadio").addEventListener("click", function(event) {
       editMode = true;
       centerMode = false;
+      rotateMode = false;
     });
     document.querySelector("#centerRadio").addEventListener("click", function(event) {
       editMode = false;
       centerMode = true;
+      rotateMode = false;
+    });
+    document.querySelector("#rotateRadio").addEventListener("click", function(event) {
+      editMode = false;
+      centerMode = false;
+      rotateMode = true;
     });
     document.querySelector("#simulate").addEventListener("click", function(event) {
       simulationMode = true;
