@@ -1352,7 +1352,7 @@
   }
   function gen_rectangle_code(obj) {
     var name = "tmp" + gen_code.varCount++;
-    var code = "GameRectangle " + name + " = new GameCircle(world.getWorld(), ";
+    var code = "GameRectangle " + name + " = new GameRectangle(world.getWorld(), ";
     code += (obj.nature === "dynamic" ? "BodyDef.BodyType.DynamicBody" : "BodyDef.BodyType.StaticBody");
     ["radius", "x", "y"].forEach(function(prop) {
       code += ", " + obj[prop] + "f";
@@ -1903,7 +1903,7 @@
     "friction-hollow", "restitution-hollow", "density-hollow",
     "friction-protagonist", "restitution-protagonist", "density-protagonist", "angular-damping-protagonist",
     "friction-chain", "restitution-chain", "density-chain",
-    "friction-rectangle", "restitution-rectangle", "density-rectangle"].forEach(function(id) {
+    "friction-rectangle", "restitution-rectangle", "density-rectangle", "angular-damping-rectangle"].forEach(function(id) {
       var el = document.querySelector("#" + id);
       el.value = defaultPhysicsValues[el.dataset.type][el.dataset.var];
       el.addEventListener("keyup", function(event) {
