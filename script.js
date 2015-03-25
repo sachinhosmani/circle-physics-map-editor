@@ -1902,7 +1902,8 @@
     ["restitution-circle", "friction-circle", "density-circle", "angular-damping-circle",
     "friction-hollow", "restitution-hollow", "density-hollow",
     "friction-protagonist", "restitution-protagonist", "density-protagonist", "angular-damping-protagonist",
-    "friction-chain", "restitution-chain", "density-chain"].forEach(function(id) {
+    "friction-chain", "restitution-chain", "density-chain",
+    "friction-rectangle", "restitution-rectangle", "density-rectangle"].forEach(function(id) {
       var el = document.querySelector("#" + id);
       el.value = defaultPhysicsValues[el.dataset.type][el.dataset.var];
       el.addEventListener("keyup", function(event) {
