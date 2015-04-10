@@ -22,8 +22,8 @@
   var showMarkingLines = false;
   var showPhoneMode = false;
   var curveMode = false;
-  var gravity = -37;
-  var forceX = 130;
+  var gravity = -50;
+  var forceX = 70;
   var pointRadius = 6;
   var oldScrollX = null, oldScrollY  = null;
   var joints = [];
@@ -62,7 +62,7 @@
       density: 1.0
     },
     chain: {
-      friction: 3.0,
+      friction: 0.0,
       restitution: 0.0,
       density: 1.0
     }
@@ -76,8 +76,7 @@
     background: "#563b1b",
     dynamic: "#434d42",
     point: "grey",
-    "distance-joint": "#000000",
-    rectangle: "#123412"
+    "distance-joint": "#000000"
   };
   var UIManager = {
     points: [],
@@ -668,7 +667,7 @@
     return shape;
   }
   function drawRectangle(x, y, w, h, dummy) {
-    var rectangle = strokeAndFill(svg.rect(w, h).move(mapX(x), mapY(y)), "rectangle");
+    var rectangle = strokeAndFill(svg.rect(w, h).move(mapX(x), mapY(y)), "dynamic");
     redrawAxes();
     var shape = new ShapeWrapper(rectangle, ShapeWrapper.TYPE_RECTANGLE);
     shape.w = w;
@@ -1201,6 +1200,7 @@
       return;
     }
     destroyAll();
+    var oldIDToNewID = {};
     var scene = json.scene;
     defaultPhysicsValues = json.physicsValues;
     defaultColors = json.colors;
@@ -1212,7 +1212,7 @@
         var x = importScale(obj.x);
         var y = importScale(obj.y);
         var shape = drawCircle(x, y, importScale(obj.radius));
-        shape.id2 = obj.id;
+        oldIDToNewID[obj.id] = shape.id;
         if (obj.nature === "dynamic") {
           nextNature(shape, x, y);
         }
@@ -1221,7 +1221,7 @@
         var x = importScale(obj.x);
         var y = importScale(obj.y);
         var shape = drawCircle(x, y, importScale(obj.radius));
-        shape.id2 = obj.id;
+        oldIDToNewID[obj.id] = shape.id;
         nextNature(shape, x, y);
         nextNature(shape, x, y);
         break;
@@ -1229,7 +1229,7 @@
         var x = importScale(obj.x);
         var y = importScale(obj.y);
         var shape = drawCircle(x, y, importScale(obj.radius));
-        shape.id2 = obj.id;
+        oldIDToNewID[obj.id] = shape.id;
         nextNature(shape, x, y);
         nextNature(shape, x, y);
         nextNature(shape, x, y);
@@ -1245,6 +1245,52 @@
           markingPoint._y = importScale(point[1]);
           return markingPoint;
         }));
+        break;
+      case "rectangle":
+        var shape = drawRectangle(importScale(obj.x), importScale(obj.y), importScale(obj.w), importScale(obj.h));
+        oldIDToNewID[obj.id] = shape.id;
+        shape.shape.rotate(180 - obj.angle);
+        shape.angle = 180 - obj.angle;
+        shape.rotated = true;
+        break;
+      }
+    }
+    for (var i = 0; i < json.joints.length; i++) {
+      var joint = json.joints[i];
+      var shape1, shape2;
+      for (var j = 0; j < shapes.length; j++) {
+        if (shapes[j].id === oldIDToNewID[joint.body1]) {
+          shape1 = shapes[j];
+        }
+        if (shapes[j].id === oldIDToNewID[joint.body2]) {
+          shape2 = shapes[j];
+        }
+      }
+      var SATShape1 = shapeToSAT[oldIDToNewID[joint.body1]];
+      var SATShape2 = shapeToSAT[oldIDToNewID[joint.body2]];
+      var markingPoint1 = drawPoint(deMapX(SATShape1.pos.x), deMapY(SATShape1.pos.y));
+      var markingPoint2 = drawPoint(deMapX(SATShape2.pos.x), deMapY(SATShape2.pos.y));
+      switch (joint.type) {
+      case "revolute":
+        var jointShape = drawRevoluteJoint(markingPoint1, markingPoint2, shape1, shape2);
+        jointShape.motorSpeed = joint.motorSpeed;
+        jointShape.enableMotor = joint.enableMotor;
+        jointShape.collideConnected = joint.collideConnected;
+        jointShape.enableLimit = joint.enableLimit;
+        jointShape.maxMotorTorque = joint.maxMotorTorque;
+        jointShape.upperAngle = joint.upperAngle;
+        jointShape.lowerAngle = joint.lowerAngle;
+        break;
+      case "distance":
+        markingPoint1._x = deMapX(SATShape1.pos.x);
+        markingPoint1._y = deMapY(SATShape1.pos.y);
+        markingPoint2._x = deMapX(SATShape2.pos.x);
+        markingPoint2._y = deMapY(SATShape2.pos.y);
+        var jointShape = drawDistanceJoint(markingPoint1, markingPoint2, shape1, shape2);
+        jointShape.length = joint.length;
+        jointShape.frequencyHz = joint.frequencyHz;
+        jointShape.collideConnected = joint.collideConnected;
+        jointShape.dampingRatio = joint.dampingRatio;
         break;
       }
     }
@@ -1354,11 +1400,13 @@
     var name = "tmp" + gen_code.varCount++;
     var code = "GameRectangle " + name + " = new GameRectangle(world.getWorld(), ";
     code += (obj.nature === "dynamic" ? "BodyDef.BodyType.DynamicBody" : "BodyDef.BodyType.StaticBody");
-    ["radius", "x", "y"].forEach(function(prop) {
+    obj.x = obj.x + obj.w / 2;
+    obj.y = obj.y - obj.h / 2;
+    ["w", "h", "x", "y", "angle"].forEach(function(prop) {
       code += ", " + obj[prop] + "f";
     });
     ["friction", "restitution", "density", "angularDamping"].forEach(function(prop) {
-      code += ", " + defaultPhysicsValues.circle[prop] + "f";
+      code += ", " + defaultPhysicsValues.rectangle[prop] + "f";
     });
     code += ", ";
     code += gen_color(defaultColors[obj.nature]);
@@ -1375,7 +1423,8 @@
     ["motorSpeed", "maxMotorTorque", "lowerAngle", "upperAngle"].forEach(function(prop) {
       code += joint[prop] + "f, ";
     });
-    code += gen_code.varMap[joint.body1] + ", " + gen_code.varMap[joint.body2] + "f));\n";
+    code += gen_code.varMap[joint.body1] + ", " + gen_code.varMap[joint.body2] + ", ";
+    code += "new Vector2(" + gen_code.varMap[joint.body1] + ".GetPosition().x, " + gen_code.varMap[joint.body1] + ".GetPosition().y));\n";
     return code;
   }
   function gen_distance_joint_code(joint) {
@@ -1626,7 +1675,7 @@
           var point = rotatePoint(pos.x, pos.y, center.x, center.y, degreesToRadians(180 - obj.angle) - body.GetAngle());
           polygonString += Math.floor(point.x) + "," + Math.floor(point.y) + " ";
         });
-        return strokeAndFill(svg.polygon(polygonString), "rectangle");
+        return strokeAndFill(svg.polygon(polygonString), "dynamic");
       };
     }
     function createBox2dJoint(joint) {
@@ -1933,7 +1982,7 @@
               return shape.nature === ShapeWrapper.NATURE_GOAL;
               break;
             case "dynamic":
-              return shape.type === ShapeWrapper.NATURE_DYNAMIC;
+              return shape.nature === ShapeWrapper.NATURE_DYNAMIC || shape.type === ShapeWrapper.TYPE_RECTANGLE;
               break;
             case "static":
               return shape.nature === ShapeWrapper.NATURE_STATIC;
