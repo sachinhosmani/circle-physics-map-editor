@@ -1384,7 +1384,8 @@
     return code;
   }
   function gen_chain_code(obj) {
-    var code = "world.bodies.add(new GameChain(world.getWorld(), new Vector2[] {";
+    var name = "tmp" + gen_code.varCount++;
+    var code = "GameChain " + name + " = new GameChain(world.getWorld(), new Vector2[] {";
     for (var i = 0; i < obj.points.length - 1; i++) {
       code += "new Vector2(" + obj.points[i][0] + "f, " + obj.points[i][1] + "f), ";
     }
@@ -1393,7 +1394,8 @@
       code += ", " + defaultPhysicsValues.chain[prop] + "f";
     });
     code += ", " + gen_color(defaultColors.chain);
-    code += "));\n";
+    code += ");\n";
+    code += "world.bodies.add(" + name + ");\n";
     return code;
   }
   function gen_rectangle_code(obj) {
@@ -1416,7 +1418,8 @@
     return code;
   }
   function gen_revolute_joint_code(joint) {
-    var code = "world.joints.add(new GameRevoluteJoint(world, ";
+    var name = "tmp" + gen_code.varCount++;
+    var code = "GameRevoluteJoint " + name + " = new GameRevoluteJoint(world, ";
     ["enableLimit", "enableMotor", "collideConnected"].forEach(function(prop) {
       code += joint[prop] + ", ";
     });
@@ -1424,11 +1427,13 @@
       code += joint[prop] + "f, ";
     });
     code += gen_code.varMap[joint.body1] + ", " + gen_code.varMap[joint.body2] + ", ";
-    code += "new Vector2(" + gen_code.varMap[joint.body1] + ".GetPosition().x, " + gen_code.varMap[joint.body1] + ".GetPosition().y));\n";
+    code += gen_code.varMap[joint.body1] + ".body.GetPosition().x, " + gen_code.varMap[joint.body1] + ".body.GetPosition().y);\n";
+    code += "world.joints.add(" + name + ");\n";
     return code;
   }
   function gen_distance_joint_code(joint) {
-    var code = "world.joints.add(new GameDistanceJoint(world, ";
+    var name = "tmp" + gen_code.varCount++;
+    var code = "GameDistanceJoint " + name + " = new GameDistanceJoint(world, ";
     ["collideConnected"].forEach(function(prop) {
       code += joint[prop] + ", ";
     });
@@ -1437,7 +1442,8 @@
     });
     code += gen_color(defaultColors["distance-joint"]) + ", ";
     code += gen_code.varMap[joint.body1] + ", " + gen_code.varMap[joint.body2];
-    code += "));\n";
+    code += ");\n";
+    code += "world.joints.add(" + name + ");\n";
     return code;
   }
   function gen_joint_code(joint) {
