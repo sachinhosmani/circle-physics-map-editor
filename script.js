@@ -28,6 +28,7 @@
   var oldScrollX = null, oldScrollY  = null;
   var joints = [];
   var allPoints = [];
+  var firstStage = false;
   function exportScale(n) {
     return n / 30;
   }
@@ -1427,7 +1428,7 @@
       code += joint[prop] + "f, ";
     });
     code += gen_code.varMap[joint.body1] + ", " + gen_code.varMap[joint.body2] + ", ";
-    code += gen_code.varMap[joint.body1] + ".body.GetPosition().x, " + gen_code.varMap[joint.body1] + ".body.GetPosition().y);\n";
+    code += gen_code.varMap[joint.body1] + ".body.getPosition().x, " + gen_code.varMap[joint.body1] + ".body.getPosition().y);\n";
     code += "world.joints.add(" + name + ");\n";
     return code;
   }
@@ -1457,10 +1458,14 @@
     gen_code.varCount = 0;
     gen_code.varMap = {};
     var code = "";
-    code += "world.gameMenu.bgColor = " + gen_color(defaultColors.background) + ";\n";
-    code += "world.pauseMenu.bgColor = " + gen_color(defaultColors.background) + ";\n";
-    code += "world.mainMenu.bgColor = " + gen_color(defaultColors.background) + ";\n";
-    code += "world.levelDoneMenu.bgColor = " + gen_color(defaultColors.background) + ";\n";
+    if (firstStage) {
+      code += "world.getWorld().setGravity(new Vector2(0.0f, " + gravity + "f));\n";
+      code += "GameWorld.baseForce = " + forceX + "f;\n";
+      code += "world.gameMenu.bgColor = " + gen_color(defaultColors.background) + ";\n";
+      code += "world.pauseMenu.bgColor = " + gen_color(defaultColors.background) + ";\n";
+      code += "world.mainMenu.bgColor = " + gen_color(defaultColors.background) + ";\n";
+      code += "world.levelDoneMenu.bgColor = " + gen_color(defaultColors.background) + ";\n";
+    }
     var colors = scene.colors;
     var physicsValues = scene.physicsValues;
     for (var i = 0; i < scene.scene.length; i++) {
@@ -1476,7 +1481,9 @@
         code += gen_goal_code(obj);
         break;
       case "protagonist":
-        code += gen_protagonist_code(obj);
+        if (firstStage) {
+          code += gen_protagonist_code(obj);
+        }
         break;
       case "chain":
         code += gen_chain_code(obj);
@@ -1969,9 +1976,11 @@
     document.querySelector("#force").value = forceX;
     document.querySelector("#gravity").addEventListener("keyup", function(event) {
       gravity = parseFloat(this.value);
+      updateCode();
     });
     document.querySelector("#force").addEventListener("keyup", function(event) {
       forceX = parseFloat(this.value);
+      updateCode();
     });
     ["protagonist-color", "hollow-color", "background-color", "dynamic-color",
     "static-color", "chain-color", "goal-color", "distance-joint-color"].forEach(function(id) {
@@ -2033,6 +2042,10 @@
     });
     document.querySelector("#shape").addEventListener("change", function() {
       rectangleMode = (this.value === "rectangle");
+    });
+    document.querySelector("#first-stage").addEventListener("change", function() {
+      firstStage = this.checked;
+      updateCode();
     });
   }
   window.addEventListener("load", onLoad);
