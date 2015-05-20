@@ -29,6 +29,7 @@
   var joints = [];
   var allPoints = [];
   var firstStage = false;
+  var makeUnsafeBody = false;
   function exportScale(n) {
     return n / 30;
   }
@@ -497,6 +498,9 @@
     if (type == "distance-joint") {
       return obj.stroke({color: defaultColors[type], width: 1});
     }
+    if (makeUnsafeBody) {
+      obj.stroke({color: "black", width: 4});
+    }
     return obj.attr({fill: color});
   }
   function findAngle(x1, y1, x2, y2) {
@@ -639,6 +643,7 @@
     var circle = strokeAndFill(svg.circle(2 * r).move(mapX(x - r), mapY(y + r)), "static");
     redrawAxes();
     var shape = new ShapeWrapper(circle, ShapeWrapper.TYPE_CIRCLE);
+    shape.unsafe = makeUnsafeBody;
     circle.mousedown(function() {
     });
     if (dummy) {
@@ -671,6 +676,7 @@
     var rectangle = strokeAndFill(svg.rect(w, h).move(mapX(x), mapY(y)), "dynamic");
     redrawAxes();
     var shape = new ShapeWrapper(rectangle, ShapeWrapper.TYPE_RECTANGLE);
+    shape.unsafe = makeUnsafeBody;
     shape.w = w;
     shape.h = h;
     shape.angle = 180;
@@ -1086,7 +1092,8 @@
         var obj = {
           radius: exportScale(SATShape.r),
           x: exportScale(deMapX(SATShape.pos.x)),
-          y: exportScale(deMapY(SATShape.pos.y))
+          y: exportScale(deMapY(SATShape.pos.y)),
+          unsafe: shape.unsafe
         };
         if ("id" in shape) {
           obj.id = shape.id;
@@ -1119,7 +1126,8 @@
           y: exportScale(deMapY(SATShape.pos.y)),
           w: exportScale(shape.w),
           h: exportScale(shape.h),
-          angle: 180 - shape.angle
+          angle: 180 - shape.angle,
+          unsafe: shape.unsafe
         };
         if (obj.angle === 360) {
           obj.angle = 0;
@@ -1366,7 +1374,11 @@
     code += ", ";
     code += gen_color(defaultColors[obj.nature]);
     code += ");\n";
-    code += "world.bodies.add(" + name + ");\n";
+    if (obj.unsafe) {
+      code += "world.unsafeBodies.add(" + name + ");\n";
+    } else {
+      code += "world.bodies.add(" + name + ");\n";
+    }
     gen_code.varMap[obj.id] = name;
     return code;
   }
@@ -1894,6 +1906,18 @@
       this.hidden = true;
       hideAllMarkingPoints();
       document.querySelector("#showMarkingPoints").hidden = false;
+    });
+    document.querySelector("#makeUnsafeBody").addEventListener("click", function() {
+      makeUnsafeBody = true;
+      this.hidden = true;
+      showAllMarkingPoints();
+      document.querySelector("#makeSafeBody").hidden = false;
+    });
+    document.querySelector("#makeSafeBody").addEventListener("click", function() {
+      makeUnsafeBody = false;
+      this.hidden = true;
+      hideAllMarkingPoints();
+      document.querySelector("#makeUnsafeBody").hidden = false;
     });
     document.querySelector("#enablePhoneMode").addEventListener("click", function() {
       showPhoneMode = true;
